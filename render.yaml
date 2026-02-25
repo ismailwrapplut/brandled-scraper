@@ -1,0 +1,46 @@
+# ============================================
+# Render Blueprint — Infrastructure as Code
+# Render will auto-detect this file and set up services
+# ============================================
+
+services:
+  # Web Service — REST API for on-demand scraping + manual seed trigger
+  - type: web
+    name: brandled-scraper
+    runtime: docker
+    plan: starter         # $7/mo — 512 MB RAM, enough for Chromium
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: SCRAPER_PORT
+        value: "3001"
+      - key: SCRAPER_API_SECRET
+        sync: false        # You'll set this manually in Render dashboard
+      - key: AZURE_OPENAI_ENDPOINT
+        sync: false
+      - key: AZURE_OPENAI_API_KEY
+        sync: false
+      - key: AZURE_OPENAI_API_VERSION
+        value: "2024-04-01-preview"
+      - key: AZURE_EMBEDDING_DEPLOYMENT
+        value: "text-embedding-3-small"
+      - key: AZURE_CLASSIFIER_DEPLOYMENT
+        value: "gpt-5-mini"
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        value: "brandled-knowledge"
+      - key: TWITTER_AUTH_TOKEN
+        sync: false
+      - key: TWITTER_SCRAPER_USERNAME
+        sync: false
+      - key: TWITTER_SCRAPER_PASSWORD
+        sync: false
+      - key: TWITTER_SCRAPER_EMAIL
+        sync: false
+      - key: LINKEDIN_LI_AT_COOKIE
+        sync: false
+      - key: LINKEDIN_JSESSIONID
+        sync: false
+      - key: NODE_ENV
+        value: "production"

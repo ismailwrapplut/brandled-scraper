@@ -1,0 +1,8 @@
+node_modules
+.env
+.git
+.gitignore
+data/output/*.json
+x-auth.json
+*.md
+.vscode

@@ -1,0 +1,26 @@
+{
+    "name": "brandled-scraper",
+    "version": "1.0.0",
+    "description": "Brandled top posts scraper — scrapes high-performing content from X and LinkedIn for the AI knowledge base",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "node --watch server.js",
+        "seed": "node scripts/seed.js",
+        "refresh": "node scripts/refresh.js",
+        "seed:test": "node scripts/seed.js --limit 2 --dry-run",
+        "seed:niche": "node scripts/seed.js --niche",
+        "refresh:niche": "node scripts/refresh.js --niche"
+    },
+    "dependencies": {
+        "@pinecone-database/pinecone": "^4.0.0",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.0",
+        "jsdom": "^28.1.0",
+        "openai": "^4.80.0",
+        "playwright": "^1.50.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
