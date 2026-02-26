@@ -178,11 +178,21 @@ export class LinkedInClient {
 
                 if (profileResp.ok) {
                     const included = profileResp.data?.included || [];
+                    // Match by publicIdentifier to avoid picking the logged-in user's profile
                     const profileEntity = included.find(i =>
-                        i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" && i.entityUrn
+                        i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" &&
+                        i.entityUrn &&
+                        i.publicIdentifier === profileSlug
                     );
                     if (profileEntity) {
                         profileUrn = profileEntity.entityUrn;
+                    }
+                    // Fallback: first profile entity (if only one returned)
+                    if (!profileUrn) {
+                        const anyProfile = included.find(i =>
+                            i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" && i.entityUrn
+                        );
+                        if (anyProfile) profileUrn = anyProfile.entityUrn;
                     }
                     // Fallback: extract from data.*elements
                     if (!profileUrn) {
