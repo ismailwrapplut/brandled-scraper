@@ -253,10 +253,21 @@ export class LinkedInClient {
                     }
                 }
 
+                // Check if the API returned any Update items at all (before our filters)
+                const rawUpdateCount = (feedData?.included || []).filter(
+                    i => i.$type === "com.linkedin.voyager.dash.feed.Update"
+                ).length;
+
+                if (rawUpdateCount === 0) {
+                    // API truly returned nothing — end of feed
+                    console.log(`  📊 LinkedIn: API returned 0 items (page ${pageNum}), end of feed.`);
+                    break;
+                }
+
                 if (newCount === 0) {
                     consecutiveEmpty++;
-                    if (consecutiveEmpty >= 2) {
-                        console.log(`  📊 LinkedIn: No new posts found (page ${pageNum}), stopping.`);
+                    if (consecutiveEmpty >= 3) {
+                        console.log(`  📊 LinkedIn: No new qualifying posts for ${consecutiveEmpty} pages, stopping.`);
                         break;
                     }
                 } else {
@@ -319,10 +330,10 @@ export class LinkedInClient {
             for (const item of updates) {
                 try {
                     const commentary = item.commentary?.text?.text;
-                    if (!commentary || commentary.length < 15) continue;
+                    if (!commentary || commentary.length < 5) continue;
 
-                    // Skip reshares
-                    if (item.resharedUpdate) continue;
+                    // Skip reshares (but keep if they have meaningful commentary)
+                    if (item.resharedUpdate && (!commentary || commentary.length < 50)) continue;
 
                     // Extract activity URN from entityUrn
                     // Format: "urn:li:fsd_update:(urn:li:activity:XXXX,MEMBER_SHARES,...)"
