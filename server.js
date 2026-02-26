@@ -239,6 +239,118 @@ app.get("/api/seed/status", authenticate, (req, res) => {
     res.json({ running: _seedRunning, lastResult: _seedResult });
 });
 
+/**
+ * GET /api/debug/x?handle=justinwelsh
+ * Quick diagnostic: shows raw API response structure from X
+ */
+app.get("/api/debug/x", authenticate, async (req, res) => {
+    const handle = req.query.handle || "justinwelsh";
+    const client = new XClient();
+    
+    try {
+        await client.initialize();
+        
+        // Get headers
+        const headers = await client._getAPIHeaders();
+        
+        // Resolve user
+        let userResult;
+        try {
+            userResult = await client._gqlRequest(headers, "UserByScreenName", {
+                screen_name: handle,
+                withSafetyModeUserFields: true,
+            }, {
+                hidden_profile_subscriptions_enabled: true,
+                responsive_web_graphql_exclude_directive_enabled: true,
+                verified_phone_label_enabled: false,
+                responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                responsive_web_graphql_timeline_navigation_enabled: true,
+            });
+        } catch (e) {
+            return res.json({ error: "UserByScreenName failed", message: e.message });
+        }
+        
+        const userObj = userResult?.data?.user?.result;
+        const userId = userObj?.rest_id;
+        const legacy = userObj?.legacy || {};
+        
+        // Fetch one page of tweets
+        let timelineResult;
+        try {
+            timelineResult = await client._gqlRequest(headers, "UserTweets", {
+                userId,
+                count: 5,
+                includePromotedContent: false,
+                withQuickPromoteEligibilityTweetFields: true,
+                withVoice: true,
+                withV2Timeline: true,
+            }, {
+                responsive_web_graphql_exclude_directive_enabled: true,
+                verified_phone_label_enabled: false,
+                responsive_web_graphql_timeline_navigation_enabled: true,
+                responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+                creator_subscriptions_tweet_preview_api_enabled: true,
+                tweetypie_unmention_optimization_enabled: true,
+                responsive_web_edit_tweet_api_enabled: true,
+                graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+                view_counts_everywhere_api_enabled: true,
+                longform_notetweets_consumption_enabled: true,
+                responsive_web_twitter_article_tweet_consumption_enabled: true,
+                tweet_awards_web_tipping_enabled: false,
+                freedom_of_speech_not_reach_fetch_enabled: true,
+                standardized_nudges_misinfo: true,
+                tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+                rweb_video_timestamps_enabled: true,
+                longform_notetweets_rich_text_read_enabled: true,
+                longform_notetweets_inline_media_enabled: true,
+                responsive_web_enhance_cards_enabled: false,
+            });
+        } catch (e) {
+            return res.json({
+                user: { id: userId, name: legacy.name, followers: legacy.followers_count, typename: userObj?.__typename },
+                error: "UserTweets failed", message: e.message,
+            });
+        }
+        
+        // Analyze the response
+        const instructions = timelineResult?.data?.user?.result?.timeline_v2?.timeline?.instructions || 
+                             timelineResult?.data?.user?.result?.timeline?.timeline?.instructions || [];
+        const entries = instructions.flatMap(i => i?.entries || []);
+        const tweetEntries = entries.filter(e => e?.entryId?.startsWith("tweet-"));
+        const resultKeys = Object.keys(timelineResult?.data?.user?.result || {});
+        const typename = timelineResult?.data?.user?.result?.__typename;
+        
+        res.json({
+            user: {
+                id: userId,
+                name: legacy.name,
+                screenName: legacy.screen_name,
+                followers: legacy.followers_count,
+                tweetsCount: legacy.statuses_count,
+                typename: userObj?.__typename,
+            },
+            timeline: {
+                typename,
+                resultKeys,
+                instructionCount: instructions.length,
+                instructionTypes: instructions.map(i => i?.type),
+                totalEntries: entries.length,
+                tweetEntries: tweetEntries.length,
+                entryIds: entries.slice(0, 10).map(e => e?.entryId),
+                // Show first tweet text as proof
+                sampleTweet: tweetEntries[0] ? 
+                    (tweetEntries[0]?.content?.itemContent?.tweet_results?.result?.legacy?.full_text || "").slice(0, 200) : null,
+            },
+            // Raw response for deep debugging (truncated)
+            rawResponsePreview: JSON.stringify(timelineResult).slice(0, 2000),
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    } finally {
+        await client.cleanup();
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`\n🚀 Brandled Scraper API running on http://localhost:${PORT}`);
     console.log(`   POST /api/scrape/linkedin  — Scrape LinkedIn posts`);

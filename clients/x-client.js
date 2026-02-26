@@ -336,6 +336,28 @@ export class XClient {
                 break;
             }
 
+            // Debug: log what X actually returned
+            if (pageNum === 1) {
+                const instructions =
+                    timelineResult?.data?.user?.result?.timeline_v2?.timeline?.instructions ||
+                    timelineResult?.data?.user?.result?.timeline?.timeline?.instructions ||
+                    [];
+                const entryCount = instructions.reduce((sum, i) => sum + (i?.entries?.length || 0), 0);
+                console.log(`  🔍 @${handle} API debug: ${instructions.length} instructions, ${entryCount} entries`);
+                if (entryCount === 0) {
+                    // Log the raw response structure to understand what X returned
+                    const keys = Object.keys(timelineResult?.data?.user?.result || {});
+                    console.log(`  🔍 Response structure: user.result keys = [${keys.join(', ')}]`);
+                    const typename = timelineResult?.data?.user?.result?.__typename;
+                    if (typename) console.log(`  🔍 __typename = ${typename}`);
+                    // Check if there's an "unavailable" message
+                    const reason = timelineResult?.data?.user?.result?.reason || 
+                                   timelineResult?.data?.user?.result?.message ||
+                                   timelineResult?.data?.user?.result?.unavailable_message?.text;
+                    if (reason) console.log(`  🔍 X says: ${JSON.stringify(reason)}`);
+                }
+            }
+
             const tweets = this._extractTweetsFromGraphQL(timelineResult, handle);
             if (tweets.length === 0 && pageNum > 1) {
                 console.log(`  📊 @${handle}: No more tweets on page ${pageNum}, stopping.`);
@@ -368,9 +390,6 @@ export class XClient {
         return deduped.slice(0, maxTweets);
     }
 
-    /**
-     * Make a GraphQL request to X's internal API
-     */
     /**
      * Make a GraphQL request with automatic retry + rate-limit backoff
      */
@@ -676,6 +695,19 @@ export class XClient {
                 json?.data?.user?.result?.timeline_v2?.timeline?.instructions ||
                 json?.data?.user?.result?.timeline?.timeline?.instructions ||
                 [];
+
+            if (instructions.length === 0) {
+                // Try alternative response paths (X changes these)
+                const altInstructions = 
+                    json?.data?.user?.result?.timeline_v2?.timeline?.instructions ||
+                    json?.data?.user_result?.result?.timeline_v2?.timeline?.instructions ||
+                    json?.data?.user?.timeline_v2?.timeline?.instructions ||
+                    [];
+                if (altInstructions.length > 0) {
+                    console.log(`  🔍 Found tweets via alternative response path`);
+                    instructions.push(...altInstructions);
+                }
+            }
 
             for (const instruction of instructions) {
                 const entries = instruction?.entries || [];
