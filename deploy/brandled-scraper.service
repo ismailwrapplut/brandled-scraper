@@ -1,0 +1,22 @@
+[Unit]
+Description=Brandled Scraper API
+After=network.target
+
+[Service]
+Type=simple
+User=scraper
+WorkingDirectory=/home/scraper/brandled-scraper
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+
+# Give Chromium enough resources
+LimitNOFILE=65536
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
