@@ -106,7 +106,7 @@ export class LinkedInClient {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  PRIMARY: Direct Voyager API with cursor-based pagination
+    //  PRIMARY: LinkedIn GraphQL API (voyagerFeedDashProfileUpdates)
     // ═══════════════════════════════════════════════════════════════════
 
     async _fetchPostsViaAPI(profileUrl, maxPosts) {
@@ -122,7 +122,7 @@ export class LinkedInClient {
         const page = await this.context.newPage();
 
         try {
-            // Navigate to the target profile page — it's stable and won't redirect away
+            // Navigate to the profile page to establish session context
             console.log(`  🌐 LinkedIn: Loading profile page for context...`);
             try {
                 await page.goto(`https://www.linkedin.com/in/${profileSlug}/`, {
@@ -131,6 +131,12 @@ export class LinkedInClient {
                 });
                 await page.waitForTimeout(3000);
             } catch { /* page may still be usable */ }
+
+            // Check if redirected to login
+            const currentUrl = page.url();
+            if (currentUrl.includes("/login") || currentUrl.includes("/authwall")) {
+                throw new Error("Redirected to login — li_at cookie invalid/expired");
+            }
 
             if (!csrfToken) {
                 const cookies = await this.context.cookies("https://www.linkedin.com");
@@ -147,8 +153,6 @@ export class LinkedInClient {
                 "X-Li-Page-Instance": "urn:li:page:d_flagship3_profile_view_base",
             };
 
-            // Instead of using this.context.request (which can hit Max Redirects),
-            // we execute the fetch natively INSIDE the Chromium page which already has perfect cookies/headers.
             const executeFetch = async (url) => {
                 return await page.evaluate(async ({ fetchUrl, fetchHeaders }) => {
                     try {
@@ -164,83 +168,69 @@ export class LinkedInClient {
                 }, { fetchUrl: url, fetchHeaders: headers });
             };
 
-            // Step 2: Resolve the profile to get the author URN
-            console.log(`  🔍 LinkedIn: Resolving profile for "${profileSlug}"...`);
+            // Step 1: Resolve the profile URN
+            console.log(`  🔍 LinkedIn: Resolving profile URN for "${profileSlug}"...`);
             let profileUrn = null;
             try {
-                const profileResp = await executeFetch(`https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${profileSlug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`);
+                const profileResp = await executeFetch(
+                    `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${profileSlug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
+                );
 
                 if (profileResp.ok) {
-                    const profileData = profileResp.data;
-                    const elements = profileData?.included || profileData?.elements || [];
-                    for (const el of elements) {
-                        if (el.$type === "com.linkedin.voyager.dash.identity.profile.Profile" || el.entityUrn?.includes("fsd_profile")) {
-                            profileUrn = el.entityUrn || el["*profile"];
-                            break;
-                        }
+                    const included = profileResp.data?.included || [];
+                    const profileEntity = included.find(i =>
+                        i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" && i.entityUrn
+                    );
+                    if (profileEntity) {
+                        profileUrn = profileEntity.entityUrn;
                     }
-                    // Fallback: try to extract from data
+                    // Fallback: extract from data.*elements
                     if (!profileUrn) {
-                        profileUrn = profileData?.data?.["*elements"]?.[0] ||
-                            elements.find(e => e.entityUrn)?.entityUrn;
+                        const elements = profileResp.data?.data?.["*elements"];
+                        if (Array.isArray(elements) && elements.length > 0) {
+                            profileUrn = elements[0];
+                        }
                     }
                 }
             } catch (e) {
                 console.log(`  ⚠️ Profile resolution failed: ${e.message}`);
             }
 
-            // If we couldn't get the URN from the profile endpoint, construct it
             if (!profileUrn) {
-                console.log(`  ℹ️ Using activity feed endpoint directly...`);
+                throw new Error(`Could not resolve profile URN for ${profileSlug}`);
             }
+            console.log(`  ✅ Profile URN: ${profileUrn}`);
 
-            // Step 3: Fetch posts via the activity feed API
-            console.log(`  📡 LinkedIn: Fetching posts via API (target: ${maxPosts})...`);
+            // Step 2: Fetch posts via GraphQL feed endpoint
+            console.log(`  📡 LinkedIn: Fetching posts via GraphQL API (target: ${maxPosts})...`);
             const allPosts = [];
             let start = 0;
-            const count = 40; // LinkedIn returns up to 40 per page
+            const count = 20; // LinkedIn GraphQL returns 20 per page
             let pageNum = 0;
-            const maxPages = Math.ceil(maxPosts / count) + 5;
+            const maxPages = Math.ceil(maxPosts / count) + 3;
             let consecutiveEmpty = 0;
 
             while (allPosts.length < maxPosts && pageNum < maxPages) {
                 pageNum++;
 
-                // LinkedIn Voyager API for profile activity/posts
-                let feedUrl = "";
-                if (profileUrn) {
-                    feedUrl = `https://www.linkedin.com/voyager/api/identity/profileUpdatesV2?count=${count}&profileUrn=${encodeURIComponent(profileUrn)}&q=memberShareFeed&start=${start}`;
-                } else {
-                    feedUrl = `https://www.linkedin.com/voyager/api/identity/dash/profileUpdates?` +
-                        `q=memberShareFeed&memberIdentity=${profileSlug}` +
-                        `&start=${start}&count=${count}` +
-                        `&decorationId=com.linkedin.voyager.dash.deco.identity.profile.MemberShareFeedItem-5`;
-                }
+                const feedUrl = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
+                    `&variables=(count:${count},start:${start},profileUrn:${encodeURIComponent(profileUrn)})` +
+                    `&queryId=voyagerFeedDashProfileUpdates.4af00b28d60ed0f1488018948daad822`;
 
-                let feedResp = await executeFetch(feedUrl);
+                const feedResp = await executeFetch(feedUrl);
 
                 if (!feedResp.ok) {
-                    // Secondary API fallback endpoint
-                    const altUrl = `https://www.linkedin.com/voyager/api/feed/dash/feedUpdates?` +
-                        `q=profileUpdatesByMemberIdentity&memberIdentity=${profileSlug}` +
-                        `&start=${start}&count=${count}`;
-
-                    feedResp = await executeFetch(altUrl);
-
-                    if (!feedResp.ok) {
-                        const errText = feedResp.data || feedResp.error || "";
-                        console.log(`  ⚠️ LinkedIn API failed: ${errText.substring(0, 200)}`);
-                        break;
-                    }
+                    console.log(`  ⚠️ LinkedIn GraphQL failed (${feedResp.status}): ${String(feedResp.data || feedResp.error).substring(0, 200)}`);
+                    break;
                 }
 
                 const feedData = feedResp.data;
                 if (!feedData) {
-                    console.log(`  ⚠️ Failed to parse LinkedIn API response`);
+                    console.log(`  ⚠️ Failed to parse LinkedIn GraphQL response`);
                     break;
                 }
 
-                const posts = this._parseVoyagerPosts(feedData, profileSlug);
+                const posts = this._parseGraphQLPosts(feedData, profileSlug);
 
                 if (posts.length === 0) {
                     consecutiveEmpty++;
@@ -255,16 +245,17 @@ export class LinkedInClient {
                 allPosts.push(...posts);
                 start += count;
 
-                if (pageNum % 5 === 0) {
+                if (pageNum % 3 === 0) {
                     console.log(`  📡 LinkedIn: ${allPosts.length} posts after ${pageNum} API pages...`);
                 }
 
-                // Respect rate limits
+                // Rate limit
                 await new Promise(r => setTimeout(r, 300 + Math.random() * 500));
 
-                // Check if LinkedIn indicated no more results
-                const paging = feedData?.paging || feedData?.data?.paging;
-                if (paging && paging.total !== undefined && start >= paging.total) {
+                // Check paging
+                const paging = feedData?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.paging ||
+                    feedData?.data?.paging;
+                if (paging?.total !== undefined && paging.total > 0 && start >= paging.total) {
                     console.log(`  📊 LinkedIn: Reached end of feed (${paging.total} total).`);
                     break;
                 }
@@ -274,7 +265,7 @@ export class LinkedInClient {
             const deduped = this._deduplicatePosts(allPosts);
             deduped.sort((a, b) => new Date(b.postedAt || 0) - new Date(a.postedAt || 0));
 
-            console.log(`  ✅ LinkedIn: ${deduped.length} unique posts fetched via API (${pageNum} pages)`);
+            console.log(`  ✅ LinkedIn: ${deduped.length} unique posts fetched via GraphQL API (${pageNum} pages)`);
             return deduped.slice(0, maxPosts);
 
         } catch (error) {
@@ -285,96 +276,90 @@ export class LinkedInClient {
     }
 
     /**
-     * Parse posts from LinkedIn's Voyager API response
+     * Parse posts from LinkedIn's GraphQL API response (current format)
      */
-    _parseVoyagerPosts(feedData, profileSlug) {
+    _parseGraphQLPosts(feedData, profileSlug) {
         const posts = [];
         try {
-            // LinkedIn's normalized JSON nests everything in "included"
             const included = feedData?.included || [];
-            const elements = feedData?.elements || feedData?.data?.["*elements"] || [];
 
-            // Build a lookup map of all included entities
-            const entityMap = {};
+            // Build a lookup map for SocialActivityCounts by activity URN
+            const countsMap = {};
             for (const item of included) {
-                if (item.entityUrn || item.$recipeType) {
-                    const key = item.entityUrn || item["*share"] || item.$id;
-                    if (key) entityMap[key] = item;
+                if (item.$type === "com.linkedin.voyager.dash.feed.SocialActivityCounts") {
+                    // entityUrn: "urn:li:fsd_socialActivityCounts:urn:li:activity:XXXX"
+                    const activityUrn = item.urn || item.entityUrn?.replace("urn:li:fsd_socialActivityCounts:", "") || "";
+                    countsMap[activityUrn] = item;
                 }
             }
 
-            // Find all share/post objects across both arrays
-            const allItems = [...included, ...elements];
-            for (const item of allItems) {
-                try {
-                    // Look for share commentary (post text)
-                    const commentary = item.commentary?.text?.text ||
-                        item.commentary?.text ||
-                        item.commentaryText?.text ||
-                        null;
+            // Find all Update items
+            const updates = included.filter(i => i.$type === "com.linkedin.voyager.dash.feed.Update");
 
+            for (const item of updates) {
+                try {
+                    const commentary = item.commentary?.text?.text;
                     if (!commentary || commentary.length < 15) continue;
 
-                    // Skip if it's a reshare/repost
-                    if (item.resharedUpdate || item.resharedShare) continue;
+                    // Skip reshares
+                    if (item.resharedUpdate) continue;
 
-                    // Extract engagement metrics
-                    const socialDetail = item.socialDetail || {};
-                    const totalReactions = socialDetail.totalSocialActivityCounts?.numLikes ||
-                        socialDetail.likes?.paging?.total ||
-                        item.numLikes || 0;
-                    const commentCount = socialDetail.totalSocialActivityCounts?.numComments ||
-                        socialDetail.comments?.paging?.total ||
-                        item.numComments || 0;
-                    const repostCount = socialDetail.totalSocialActivityCounts?.numShares ||
-                        item.numShares || 0;
-
-                    // Extract timestamp
-                    let postedAt = null;
-                    if (item.createdAt) {
-                        postedAt = new Date(item.createdAt).toISOString();
-                    } else if (item.created && typeof item.created.time === 'number') {
-                        postedAt = new Date(item.created.time).toISOString();
-                    } else if (item.publishedAt) {
-                        postedAt = new Date(item.publishedAt).toISOString();
-                    } else if (item.actor?.publishedAt) {
-                        postedAt = new Date(item.actor.publishedAt).toISOString();
-                    } else if (item.actor?.created && typeof item.actor.created.time === 'number') {
-                        postedAt = new Date(item.actor.created.time).toISOString();
+                    // Extract activity URN from entityUrn
+                    // Format: "urn:li:fsd_update:(urn:li:activity:XXXX,MEMBER_SHARES,...)"
+                    let activityUrn = "";
+                    const activityMatch = item.entityUrn?.match(/urn:li:activity:(\d+)/);
+                    if (activityMatch) {
+                        activityUrn = `urn:li:activity:${activityMatch[1]}`;
                     }
 
-                    // Extract URN
-                    const urn = item.entityUrn || item.urn ||
-                        item["*share"] || item.shareUrn ||
-                        `api_${Date.now()}_${posts.length}`;
+                    // Get engagement from SocialActivityCounts
+                    const counts = countsMap[activityUrn] || {};
+                    const totalReactions = counts.numLikes || 0;
+                    const commentCount = counts.numComments || 0;
+                    const repostCount = counts.numShares || 0;
+
+                    // Extract timestamp from activity ID (LinkedIn snowflake format)
+                    // Activity IDs encode timestamp: (id >> 22) gives ms since epoch
+                    let postedAt = null;
+                    if (activityMatch) {
+                        const activityId = BigInt(activityMatch[1]);
+                        // LinkedIn's epoch offset for activity IDs
+                        const timestamp = Number(activityId >> 22n);
+                        if (timestamp > 1000000000000) {
+                            postedAt = new Date(timestamp).toISOString();
+                        }
+                    }
+                    // Fallback: check metadata
+                    if (!postedAt && item.metadata?.backendUrn) {
+                        const backendMatch = item.metadata.backendUrn.match(/(\d+)$/);
+                        if (backendMatch) {
+                            const ts = Number(BigInt(backendMatch[1]) >> 22n);
+                            if (ts > 1000000000000) postedAt = new Date(ts).toISOString();
+                        }
+                    }
 
                     // Extract author name
-                    const authorName = item.actor?.name?.text ||
-                        item.actor?.name ||
-                        profileSlug;
+                    const authorName = item.actor?.name?.text || profileSlug;
 
-                    // Determine post type (simple heuristic from content)
+                    // Determine post type from content
                     let postType = "text";
                     const content = item.content;
                     if (content) {
-                        if (content["com.linkedin.voyager.feed.render.LinkedInVideoComponent"] ||
-                            content.video || content["*video"]) {
+                        if (content.videoComponent || content["com.linkedin.voyager.feed.render.LinkedInVideoComponent"]) {
                             postType = "video";
-                        } else if (content["com.linkedin.voyager.feed.render.DocumentComponent"] ||
-                            content.document || content["*document"]) {
+                        } else if (content.documentComponent || content["com.linkedin.voyager.feed.render.DocumentComponent"]) {
                             postType = "carousel";
-                        } else if (content["com.linkedin.voyager.feed.render.ImageComponent"] ||
-                            content.images || content["*images"]) {
-                            const imgCount = content.images?.length || 1;
-                            postType = imgCount > 1 ? "carousel" : "image";
-                        } else if (content["com.linkedin.voyager.feed.render.ArticleComponent"] ||
-                            content.article || content["*article"]) {
+                        } else if (content.imageComponent || content["com.linkedin.voyager.feed.render.ImageComponent"]) {
+                            postType = "image";
+                        } else if (content.articleComponent || content["com.linkedin.voyager.feed.render.ArticleComponent"]) {
                             postType = "article";
+                        } else if (content.carouselContent || item.carouselContent) {
+                            postType = "carousel";
                         }
                     }
 
                     posts.push({
-                        urn,
+                        urn: item.entityUrn || activityUrn || `graphql_${Date.now()}_${posts.length}`,
                         text: commentary,
                         totalReactions,
                         commentCount,
@@ -382,14 +367,14 @@ export class LinkedInClient {
                         postedAt,
                         authorName,
                         type: postType,
-                        media: null, // API doesn't give us direct media URLs easily
+                        media: null,
                     });
                 } catch {
                     continue;
                 }
             }
         } catch (err) {
-            console.log(`  ⚠️ Voyager parse error: ${err.message}`);
+            console.log(`  ⚠️ GraphQL parse error: ${err.message}`);
         }
 
         return posts;
