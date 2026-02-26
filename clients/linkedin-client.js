@@ -214,10 +214,11 @@ export class LinkedInClient {
             // Step 2: Fetch posts via GraphQL feed endpoint
             console.log(`  📡 LinkedIn: Fetching posts via GraphQL API (target: ${maxPosts})...`);
             const allPosts = [];
+            const seenUrns = new Set();
             let start = 0;
             const count = 20; // LinkedIn GraphQL returns 20 per page
             let pageNum = 0;
-            const maxPages = Math.ceil(maxPosts / count) + 3;
+            const maxPages = Math.min(Math.ceil(maxPosts / count) + 3, 10); // Hard cap at 10 pages
             let consecutiveEmpty = 0;
 
             while (allPosts.length < maxPosts && pageNum < maxPages) {
@@ -242,21 +243,30 @@ export class LinkedInClient {
 
                 const posts = this._parseGraphQLPosts(feedData, profileSlug);
 
-                if (posts.length === 0) {
+                // Deduplicate: stop if we see mostly repeated URNs (LinkedIn recycling content)
+                let newCount = 0;
+                for (const p of posts) {
+                    if (!seenUrns.has(p.urn)) {
+                        seenUrns.add(p.urn);
+                        allPosts.push(p);
+                        newCount++;
+                    }
+                }
+
+                if (newCount === 0) {
                     consecutiveEmpty++;
                     if (consecutiveEmpty >= 2) {
-                        console.log(`  📊 LinkedIn: No more posts found (page ${pageNum}), stopping.`);
+                        console.log(`  📊 LinkedIn: No new posts found (page ${pageNum}), stopping.`);
                         break;
                     }
                 } else {
                     consecutiveEmpty = 0;
                 }
 
-                allPosts.push(...posts);
                 start += count;
 
                 if (pageNum % 3 === 0) {
-                    console.log(`  📡 LinkedIn: ${allPosts.length} posts after ${pageNum} API pages...`);
+                    console.log(`  📡 LinkedIn: ${allPosts.length} unique posts after ${pageNum} API pages...`);
                 }
 
                 // Rate limit
