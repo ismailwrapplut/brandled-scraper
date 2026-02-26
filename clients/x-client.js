@@ -14,6 +14,21 @@
 import { chromium } from "playwright";
 import fs from "fs";
 
+// Proxy support for fetch() calls (Playwright handles its own proxy separately)
+let _fetchDispatcher = null;
+if (process.env.PROXY_SERVER) {
+    try {
+        const { ProxyAgent } = await import("undici");
+        const proxyUrl = process.env.PROXY_USERNAME
+            ? `http://${process.env.PROXY_USERNAME}:${process.env.PROXY_PASSWORD}@${process.env.PROXY_SERVER.replace(/^https?:\/\//, '')}`
+            : process.env.PROXY_SERVER;
+        _fetchDispatcher = new ProxyAgent(proxyUrl);
+        console.log(`\u2705 X fetch() proxy configured: ${process.env.PROXY_SERVER}`);
+    } catch (e) {
+        console.log(`\u26a0\ufe0f Could not configure fetch proxy: ${e.message}`);
+    }
+}
+
 const SCROLL_DELAY_MIN = 1500;
 const SCROLL_DELAY_MAX = 3000;
 const PAGE_LOAD_TIMEOUT = 30000;
@@ -405,7 +420,9 @@ export class XClient {
         const url = `https://x.com/i/api/graphql/${queryId}/${operationName}?${params.toString()}`;
 
         for (let attempt = 1; attempt <= MAX_RETRIES_PER_REQUEST; attempt++) {
-            const resp = await fetch(url, { method: "GET", headers });
+            const fetchOpts = { method: "GET", headers };
+            if (_fetchDispatcher) fetchOpts.dispatcher = _fetchDispatcher;
+            const resp = await fetch(url, fetchOpts);
 
             if (resp.ok) {
                 // Reset backoff on success
