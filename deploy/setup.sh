@@ -38,7 +38,7 @@ if [ -d "$APP_DIR" ]; then
     echo "  App directory exists, pulling latest..."
     cd "$APP_DIR" && sudo -u scraper git pull
 else
-    sudo -u scraper git clone https://github.com/YOUR_USERNAME/brandled-scraper.git "$APP_DIR"
+    sudo -u scraper git clone https://github.com/ismailwrapplut/brandled-scraper.git "$APP_DIR"
     cd "$APP_DIR"
 fi
 
