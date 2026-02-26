@@ -10,13 +10,11 @@
  *   GET  /api/health            — Health check
  */
 
+import "dotenv/config";              // must be FIRST — loads .env before any other module reads process.env
 import express from "express";
 import { LinkedInClient } from "./clients/linkedin-client.js";
 import { XClient } from "./clients/x-client.js";
 import { seedTopPosts } from "./jobs/seed.js";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
 app.use(express.json());

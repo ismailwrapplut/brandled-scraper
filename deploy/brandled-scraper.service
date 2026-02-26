@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=scraper
 WorkingDirectory=/home/scraper/brandled-scraper
-ExecStart=/usr/bin/node server.js
+ExecStart=/usr/bin/node --env-file=.env server.js
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
