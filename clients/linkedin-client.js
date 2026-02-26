@@ -216,16 +216,25 @@ export class LinkedInClient {
             const allPosts = [];
             const seenUrns = new Set();
             let start = 0;
+            let paginationToken = null;
             const count = 20; // LinkedIn GraphQL returns 20 per page
             let pageNum = 0;
-            const maxPages = Math.min(Math.ceil(maxPosts / count) + 3, 10); // Hard cap at 10 pages
+            const maxPages = Math.min(Math.ceil(maxPosts / count) + 5, 15); // Hard cap at 15 pages
             let consecutiveEmpty = 0;
 
             while (allPosts.length < maxPosts && pageNum < maxPages) {
                 pageNum++;
 
+                // Build variables — use paginationToken for page 2+ (LinkedIn requires it)
+                let variables;
+                if (pageNum === 1 || !paginationToken) {
+                    variables = `(count:${count},start:${start},profileUrn:${encodeURIComponent(profileUrn)})`;
+                } else {
+                    variables = `(count:${count},start:${start},paginationToken:${encodeURIComponent(paginationToken)},profileUrn:${encodeURIComponent(profileUrn)})`;
+                }
+
                 const feedUrl = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
-                    `&variables=(count:${count},start:${start},profileUrn:${encodeURIComponent(profileUrn)})` +
+                    `&variables=${variables}` +
                     `&queryId=voyagerFeedDashProfileUpdates.4af00b28d60ed0f1488018948daad822`;
 
                 const feedResp = await executeFetch(feedUrl);
@@ -239,6 +248,12 @@ export class LinkedInClient {
                 if (!feedData) {
                     console.log(`  ⚠️ Failed to parse LinkedIn GraphQL response`);
                     break;
+                }
+
+                // Extract paginationToken for next page
+                const feedMeta = feedData?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.metadata;
+                if (feedMeta?.paginationToken) {
+                    paginationToken = feedMeta.paginationToken;
                 }
 
                 const posts = this._parseGraphQLPosts(feedData, profileSlug);
@@ -283,7 +298,7 @@ export class LinkedInClient {
                 // Rate limit
                 await new Promise(r => setTimeout(r, 300 + Math.random() * 500));
 
-                // Check paging
+                // Check paging total
                 const paging = feedData?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.paging ||
                     feedData?.data?.paging;
                 if (paging?.total !== undefined && paging.total > 0 && start >= paging.total) {
