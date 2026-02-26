@@ -168,42 +168,46 @@ export class LinkedInClient {
                 }, { fetchUrl: url, fetchHeaders: headers });
             };
 
-            // Step 1: Resolve the profile URN
+            // Step 1: Resolve the profile URN (with retry)
             console.log(`  🔍 LinkedIn: Resolving profile URN for "${profileSlug}"...`);
             let profileUrn = null;
-            try {
-                const profileResp = await executeFetch(
-                    `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${profileSlug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
-                );
 
-                if (profileResp.ok) {
-                    const included = profileResp.data?.included || [];
-                    // Match by publicIdentifier to avoid picking the logged-in user's profile
-                    const profileEntity = included.find(i =>
-                        i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" &&
-                        i.entityUrn &&
-                        i.publicIdentifier === profileSlug
+            for (let attempt = 1; attempt <= 2 && !profileUrn; attempt++) {
+                try {
+                    if (attempt > 1) {
+                        console.log(`  🔄 Retrying profile resolution (attempt ${attempt})...`);
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+
+                    const profileResp = await executeFetch(
+                        `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${profileSlug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
                     );
-                    if (profileEntity) {
-                        profileUrn = profileEntity.entityUrn;
-                    }
-                    // Fallback: first profile entity (if only one returned)
-                    if (!profileUrn) {
-                        const anyProfile = included.find(i =>
-                            i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" && i.entityUrn
-                        );
-                        if (anyProfile) profileUrn = anyProfile.entityUrn;
-                    }
-                    // Fallback: extract from data.*elements
-                    if (!profileUrn) {
+
+                    if (profileResp.ok && profileResp.data) {
+                        // Priority 1: *elements — always contains the target profile URN (most reliable)
                         const elements = profileResp.data?.data?.["*elements"];
                         if (Array.isArray(elements) && elements.length > 0) {
                             profileUrn = elements[0];
                         }
+
+                        // Priority 2: Match by publicIdentifier in included array
+                        if (!profileUrn) {
+                            const included = profileResp.data?.included || [];
+                            const profileEntity = included.find(i =>
+                                i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" &&
+                                i.entityUrn &&
+                                i.publicIdentifier === profileSlug
+                            );
+                            if (profileEntity) {
+                                profileUrn = profileEntity.entityUrn;
+                            }
+                        }
+                    } else {
+                        console.log(`  ⚠️ Profile API returned ${profileResp.status}: ${String(profileResp.data || profileResp.error).substring(0, 150)}`);
                     }
+                } catch (e) {
+                    console.log(`  ⚠️ Profile resolution attempt ${attempt} failed: ${e.message}`);
                 }
-            } catch (e) {
-                console.log(`  ⚠️ Profile resolution failed: ${e.message}`);
             }
 
             if (!profileUrn) {
