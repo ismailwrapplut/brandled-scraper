@@ -191,26 +191,48 @@ export class XClient {
     async _refreshQueryIds() {
         try {
             console.log("  🔄 Refreshing GraphQL query IDs from X's JS bundle...");
-            const page = await this.context.newPage();
+
+            // Lightweight approach: fetch X's main page HTML, find JS bundle URLs, then fetch those
+            const mainResp = await fetch('https://x.com', {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                },
+            });
+            const html = await mainResp.text();
+
+            // Extract JS bundle URLs from the HTML
+            const scriptUrls = [];
+            const scriptRe = /src="(https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^"]+\.js)"/g;
+            let sm;
+            while ((sm = scriptRe.exec(html)) !== null) {
+                scriptUrls.push(sm[1]);
+            }
+
+            if (scriptUrls.length === 0) {
+                // Try alternate pattern
+                const altRe = /href="(https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^"]+\.js)"/g;
+                while ((sm = altRe.exec(html)) !== null) {
+                    scriptUrls.push(sm[1]);
+                }
+            }
+
             const extracted = {};
-            
-            page.on('response', async resp => {
-                const url = resp.url();
-                if (!url.includes('.js') || (!url.includes('x.com') && !url.includes('twimg.com'))) return;
+            // Fetch each JS bundle and look for query IDs (limit to first 10 to avoid slowness)
+            for (const url of scriptUrls.slice(0, 10)) {
                 try {
+                    const resp = await fetch(url, {
+                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                    });
                     const body = await resp.text();
-                    if (!body.includes('UserTweets') && !body.includes('UserByScreenName')) return;
+                    if (!body.includes('UserTweets') && !body.includes('UserByScreenName')) continue;
                     const re = /queryId:"([^"]+)",operationName:"([^"]+)",operationType:"([^"]+)"/g;
                     let m;
                     while ((m = re.exec(body)) !== null) {
                         extracted[m[2]] = m[1];
                     }
-                } catch (e) { }
-            });
-
-            await page.goto('https://x.com/explore', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-            await page.waitForTimeout(5000);
-            await page.close();
+                    if (Object.keys(extracted).length >= 2) break; // Found what we need
+                } catch (e) { /* skip failed bundle */ }
+            }
 
             let updated = 0;
             for (const [opName, queryId] of Object.entries(extracted)) {
