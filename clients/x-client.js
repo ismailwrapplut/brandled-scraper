@@ -43,10 +43,10 @@ const DELAY_BETWEEN_CREATORS_THROTTLED = [15000, 30000];
 // X's public bearer token (embedded in their JS bundle, same for every user)
 const X_BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-// X's GraphQL query IDs (stable, embedded in their JS bundle)
+// X's GraphQL query IDs — fallback values, auto-refreshed from X's JS bundle at init
 const GQL_QUERY_IDS = {
-    UserByScreenName: "xmU6X_CKVnQ5lSrCbAmJsg",
-    UserTweets: "E3opETHurmVJflFsUBVuUQ",
+    UserByScreenName: "DYkHHnsQHOuIl0gUzU5Fjg",
+    UserTweets: "rO1eqEVXEJOZkbKmVFg5IQ",
 };
 
 function sleep(ms) {
@@ -119,6 +119,7 @@ export class XClient {
                 secure: true,
             }]);
             console.log("✅ X client initialized (authenticated via TWITTER_AUTH_TOKEN)");
+            await this._refreshQueryIds();
             return;
         }
 
@@ -180,6 +181,57 @@ export class XClient {
             console.log("     Continuing in anonymous mode. (Consider adding TWITTER_AUTH_TOKEN to .env)");
         } finally {
             await page.close();
+        }
+    }
+
+    /**
+     * Auto-refresh GraphQL query IDs from X's JS bundle so they never go stale.
+     * Falls back to hardcoded values if extraction fails.
+     */
+    async _refreshQueryIds() {
+        try {
+            console.log("  🔄 Refreshing GraphQL query IDs from X's JS bundle...");
+            const page = await this.context.newPage();
+            const extracted = {};
+            
+            page.on('response', async resp => {
+                const url = resp.url();
+                if (!url.includes('.js') || (!url.includes('x.com') && !url.includes('twimg.com'))) return;
+                try {
+                    const body = await resp.text();
+                    if (!body.includes('UserTweets') && !body.includes('UserByScreenName')) return;
+                    const re = /queryId:"([^"]+)",operationName:"([^"]+)",operationType:"([^"]+)"/g;
+                    let m;
+                    while ((m = re.exec(body)) !== null) {
+                        extracted[m[2]] = m[1];
+                    }
+                } catch (e) { }
+            });
+
+            await page.goto('https://x.com/explore', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+            await page.waitForTimeout(5000);
+            await page.close();
+
+            let updated = 0;
+            for (const [opName, queryId] of Object.entries(extracted)) {
+                if (GQL_QUERY_IDS[opName] && GQL_QUERY_IDS[opName] !== queryId) {
+                    console.log(`  📝 Updated ${opName}: ${GQL_QUERY_IDS[opName]} → ${queryId}`);
+                    GQL_QUERY_IDS[opName] = queryId;
+                    updated++;
+                } else if (GQL_QUERY_IDS[opName]) {
+                    // Already correct
+                } else {
+                    GQL_QUERY_IDS[opName] = queryId;
+                }
+            }
+
+            if (updated > 0) {
+                console.log(`  ✅ Refreshed ${updated} query ID(s)`);
+            } else {
+                console.log(`  ✅ Query IDs are up-to-date`);
+            }
+        } catch (e) {
+            console.log(`  ⚠️ Could not refresh query IDs (using fallback): ${e.message}`);
         }
     }
 
@@ -257,6 +309,13 @@ export class XClient {
             "X-Twitter-Active-User": "yes",
             "X-Twitter-Auth-Type": "OAuth2Session",
             "X-Twitter-Client-Language": "en",
+            "Referer": "https://x.com",
+            "Origin": "https://x.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
         };
         // Cache for 10 minutes
         this._cachedHeadersExpiry = Date.now() + 10 * 60 * 1000;
@@ -272,13 +331,24 @@ export class XClient {
         console.log(`  🔍 @${handle}: Resolving user ID...`);
         const userResult = await this._gqlRequest(headers, "UserByScreenName", {
             screen_name: handle,
-            withSafetyModeUserFields: true,
+            withGrokTranslatedBio: false,
         }, {
             hidden_profile_subscriptions_enabled: true,
-            responsive_web_graphql_exclude_directive_enabled: true,
-            verified_phone_label_enabled: false,
+            profile_label_improvements_pcf_label_in_post_enabled: true,
+            responsive_web_profile_redirect_enabled: false,
+            rweb_tipjar_consumption_enabled: false,
+            verified_phone_label_enabled: true,
+            subscriptions_verification_info_is_identity_verified_enabled: true,
+            subscriptions_verification_info_verified_since_enabled: true,
+            highlights_tweets_tab_ui_enabled: true,
+            responsive_web_twitter_article_notes_tab_enabled: true,
+            subscriptions_feature_can_gift_premium: true,
+            creator_subscriptions_tweet_preview_api_enabled: true,
             responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
             responsive_web_graphql_timeline_navigation_enabled: true,
+        }, {
+            withPayments: false,
+            withAuxiliaryUserLabels: true,
         });
 
         const userObj = userResult?.data?.user?.result;
@@ -287,14 +357,20 @@ export class XClient {
 
         // Capture profile data
         const legacy = userObj?.legacy || {};
-        const imageUrl = legacy.profile_image_url_https || userObj?.profile_image_url_https || "";
+        const core = userObj?.core?.user_results?.result?.legacy || userObj?.core || {};
+        const userName = core?.name || legacy?.name || "";
+        const screenName = core?.screen_name || legacy?.screen_name || handle;
+        const avatarUrl = userObj?.avatar?.image_url 
+            || userObj?.legacy?.profile_image_url_https 
+            || core?.profile_image_url_https 
+            || "";
         this._lastFetchedProfile = {
             id: userId,
-            username: legacy.screen_name || handle,
-            name: legacy.name || "",
-            bio: legacy.description || "",
-            image: imageUrl
-                ? imageUrl.replace('_normal', '').replace('_200x200', '').replace('_400x400', '')
+            username: screenName,
+            name: userName,
+            bio: legacy.description || userObj?.profile_bio?.description || "",
+            image: avatarUrl
+                ? avatarUrl.replace('_normal', '').replace('_200x200', '').replace('_400x400', '')
                 : (this._lastFetchedProfile?.image || ""),
             followersCount: legacy.followers_count || 0,
             followingCount: legacy.friends_count || 0,
@@ -326,25 +402,48 @@ export class XClient {
             let timelineResult;
             try {
                 timelineResult = await this._gqlRequest(headers, "UserTweets", variables, {
-                    responsive_web_graphql_exclude_directive_enabled: true,
-                    verified_phone_label_enabled: false,
+                    rweb_video_screen_enabled: false,
+                    profile_label_improvements_pcf_label_in_post_enabled: true,
+                    responsive_web_profile_redirect_enabled: false,
+                    rweb_tipjar_consumption_enabled: false,
+                    verified_phone_label_enabled: true,
+                    creator_subscriptions_tweet_preview_api_enabled: true,
                     responsive_web_graphql_timeline_navigation_enabled: true,
                     responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-                    creator_subscriptions_tweet_preview_api_enabled: true,
-                    tweetypie_unmention_optimization_enabled: true,
+                    premium_content_api_read_enabled: false,
+                    communities_web_enable_tweet_community_results_fetch: true,
+                    c9s_tweet_anatomy_moderator_badge_enabled: true,
+                    responsive_web_grok_analyze_button_fetch_trends_enabled: false,
+                    responsive_web_grok_analyze_post_followups_enabled: true,
+                    responsive_web_jetfuel_frame: true,
+                    responsive_web_grok_share_attachment_enabled: true,
+                    responsive_web_grok_annotations_enabled: true,
+                    articles_preview_enabled: true,
                     responsive_web_edit_tweet_api_enabled: true,
                     graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
                     view_counts_everywhere_api_enabled: true,
                     longform_notetweets_consumption_enabled: true,
                     responsive_web_twitter_article_tweet_consumption_enabled: true,
                     tweet_awards_web_tipping_enabled: false,
+                    responsive_web_grok_show_grok_translated_post: false,
+                    responsive_web_grok_analysis_button_from_backend: true,
+                    post_ctas_fetch_enabled: true,
                     freedom_of_speech_not_reach_fetch_enabled: true,
                     standardized_nudges_misinfo: true,
                     tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
-                    rweb_video_timestamps_enabled: true,
                     longform_notetweets_rich_text_read_enabled: true,
                     longform_notetweets_inline_media_enabled: true,
+                    responsive_web_grok_image_annotation_enabled: true,
+                    responsive_web_grok_imagine_annotation_enabled: true,
+                    responsive_web_grok_community_note_auto_translation_is_enabled: false,
                     responsive_web_enhance_cards_enabled: false,
+                }, {
+                    withPayments: false,
+                    withAuxiliaryUserLabels: true,
+                    withArticleRichContentState: true,
+                    withArticlePlainText: false,
+                    withGrokAnalyze: false,
+                    withDisallowedReplyControls: false,
                 });
             } catch (fetchErr) {
                 console.log(`  ⚠️ Page ${pageNum} fetch failed: ${fetchErr.message}`);
@@ -408,7 +507,7 @@ export class XClient {
     /**
      * Make a GraphQL request with automatic retry + rate-limit backoff
      */
-    async _gqlRequest(headers, operationName, variables, features) {
+    async _gqlRequest(headers, operationName, variables, features, fieldToggles = null) {
         const queryId = GQL_QUERY_IDS[operationName];
         if (!queryId) throw new Error(`Unknown operation: ${operationName}`);
 
@@ -416,6 +515,9 @@ export class XClient {
             variables: JSON.stringify(variables),
             features: JSON.stringify(features),
         });
+        if (fieldToggles) {
+            params.set("fieldToggles", JSON.stringify(fieldToggles));
+        }
 
         const url = `https://x.com/i/api/graphql/${queryId}/${operationName}?${params.toString()}`;
 
