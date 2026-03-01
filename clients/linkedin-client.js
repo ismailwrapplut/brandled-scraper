@@ -122,21 +122,22 @@ export class LinkedInClient {
         const page = await this.context.newPage();
 
         try {
-            // Navigate to the profile page to establish session context
-            console.log(`  🌐 LinkedIn: Loading profile page for context...`);
+            // Navigate to /feed/ to establish session context.
+            // Direct profile URL navigation causes redirect loops on cloud IPs — /feed/ is reliable.
+            console.log(`  🌐 LinkedIn: Establishing session via /feed/...`);
             try {
-                await page.goto(`https://www.linkedin.com/in/${profileSlug}/`, {
+                await page.goto("https://www.linkedin.com/feed/", {
                     waitUntil: "domcontentloaded",
                     timeout: PAGE_LOAD_TIMEOUT,
                 });
-                await page.waitForTimeout(3000);
             } catch { /* page may still be usable */ }
 
             // Check if redirected to login
             const currentUrl = page.url();
-            if (currentUrl.includes("/login") || currentUrl.includes("/authwall")) {
+            if (currentUrl.includes("/login") || currentUrl.includes("/authwall") || currentUrl === "about:blank") {
                 throw new Error("Redirected to login — li_at cookie invalid/expired");
             }
+            console.log(`  ✅ Session established at: ${currentUrl.substring(0, 60)}`);
 
             if (!csrfToken) {
                 const cookies = await this.context.cookies("https://www.linkedin.com");
@@ -225,6 +226,7 @@ export class LinkedInClient {
             let pageNum = 0;
             const maxPages = Math.min(Math.ceil(maxPosts / count) + 5, 15); // Hard cap at 15 pages
             let consecutiveEmpty = 0;
+            let contextRetried = false;
 
             while (allPosts.length < maxPosts && pageNum < maxPages) {
                 pageNum++;
@@ -241,9 +243,37 @@ export class LinkedInClient {
                     `&variables=${variables}` +
                     `&queryId=voyagerFeedDashProfileUpdates.4af00b28d60ed0f1488018948daad822`;
 
-                const feedResp = await executeFetch(feedUrl);
+                let feedResp;
+                try {
+                    feedResp = await executeFetch(feedUrl);
+                } catch (evalErr) {
+                    // page.evaluate threw — execution context destroyed (page navigated)
+                    if (!contextRetried) {
+                        contextRetried = true;
+                        console.log(`  🔄 Execution context lost on page ${pageNum}, re-establishing session...`);
+                        try {
+                            await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT });
+                            await page.waitForTimeout(1000);
+                        } catch { /* retry anyway */ }
+                        pageNum--; // retry this page
+                        continue;
+                    }
+                    console.log(`  ⚠️ Execution context lost again, stopping pagination.`);
+                    break;
+                }
 
                 if (!feedResp.ok) {
+                    // "Failed to fetch" means the page fetch() failed — possibly context or network issue
+                    if (feedResp.error === "Failed to fetch" && !contextRetried) {
+                        contextRetried = true;
+                        console.log(`  🔄 Fetch failed on page ${pageNum}, re-establishing session...`);
+                        try {
+                            await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT });
+                            await page.waitForTimeout(1000);
+                        } catch { /* retry anyway */ }
+                        pageNum--; // retry this page
+                        continue;
+                    }
                     console.log(`  ⚠️ LinkedIn GraphQL failed (${feedResp.status}): ${String(feedResp.data || feedResp.error).substring(0, 200)}`);
                     break;
                 }
@@ -457,39 +487,56 @@ export class LinkedInClient {
     async fetchCreatorProfile(profileUrl) {
         if (!this.browser) throw new Error("LinkedInClient not initialized.");
 
-        console.log(`  ⚠️ Bypassing LinkedIn profile API, directly using DOM...`);
+        const profileSlug = this._extractProfileSlug(profileUrl);
+        const jsessionId = process.env.LINKEDIN_JSESSIONID?.replace(/"/g, "");
 
-        // Fallback to DOM
         const page = await this.context.newPage();
         try {
-            const url = profileUrl.split('/recent-activity')[0].replace(/\/$/, "");
-            await page.goto(url, {
+            // Navigate via /feed/ to avoid profile-page redirect storms on cloud IPs
+            await page.goto("https://www.linkedin.com/feed/", {
                 waitUntil: "domcontentloaded",
                 timeout: PAGE_LOAD_TIMEOUT,
-            });
-            await page.waitForTimeout(2000);
+            }).catch(() => {});
 
-            const profile = await page.evaluate(() => {
-                let name = document.querySelector('h1.text-heading-xlarge')?.textContent?.trim() || "";
-                if (!name) {
-                    name = Array.from(document.querySelectorAll('h1, h2')).map(el => el.textContent?.trim()).find(text => text && text.length < 50 && !text.includes('notification')) || "";
-                }
-                let bio = document.querySelector('div.text-body-medium')?.textContent?.trim() ||
-                    document.querySelector('.pv-text-details__left-panel .text-body-medium')?.textContent?.trim() || "";
-                const image = document.querySelector('img.pv-top-card-profile-picture__image')?.getAttribute('src') ||
-                    document.querySelector('img.pv-top-card-profile-picture__image--display')?.getAttribute('src') ||
-                    Array.from(document.querySelectorAll('img')).map(el => el.getAttribute('src')).find(s => s && s.includes('profile-display')) || "";
-                const followersText = document.body.textContent || "";
-                let followersCount = 0;
-                const match = followersText.match(/([\d,]+)\s*followers/i);
-                if (match) followersCount = parseInt(match[1].replace(/,/g, ''), 10);
-                return { name, bio, image, followersCount };
-            });
+            const csrfToken = jsessionId ||
+                (await this.context.cookies("https://www.linkedin.com")).find(c => c.name === "JSESSIONID")?.value?.replace(/"/g, "");
 
-            return profile;
+            const profileData = await page.evaluate(async ({ slug, csrf }) => {
+                try {
+                    const res = await fetch(
+                        `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${slug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`,
+                        {
+                            headers: {
+                                "Csrf-Token": csrf,
+                                "X-Restli-Protocol-Version": "2.0.0",
+                                "Accept": "application/vnd.linkedin.normalized+json+2.1",
+                            },
+                        }
+                    );
+                    if (!res.ok) return null;
+                    const json = await res.json();
+                    const included = json?.included || [];
+                    const profile = included.find(i =>
+                        i.$type === "com.linkedin.voyager.dash.identity.profile.Profile" &&
+                        i.publicIdentifier === slug
+                    );
+                    if (!profile) return null;
+                    return {
+                        name: [profile.firstName, profile.lastName].filter(Boolean).join(" "),
+                        bio: profile.headline || "",
+                        image: profile.profilePicture?.displayImageReference?.vectorImage?.artifacts?.[0]?.fileIdentifyingUrlPathSegment || "",
+                        followersCount: 0,
+                    };
+                } catch { return null; }
+            }, { slug: profileSlug, csrf: csrfToken });
+
+            if (profileData) return profileData;
+
+            // Fallback: return slug as name
+            return { name: profileSlug, bio: "", image: "", followersCount: 0 };
         } catch (error) {
             console.error(`  ❌ Error fetching LinkedIn profile ${profileUrl}:`, error.message);
-            return { name: "", bio: "", image: "", followersCount: 0 };
+            return { name: profileSlug || "", bio: "", image: "", followersCount: 0 };
         } finally {
             try { if (!page.isClosed()) await page.close(); } catch { }
         }
