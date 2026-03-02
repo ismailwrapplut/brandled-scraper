@@ -155,16 +155,22 @@ export class LinkedInClient {
             }
 
             const page = await this.context.newPage();
+            let navError = null;
             try {
                 await page.goto(entryUrl, {
                     waitUntil: "domcontentloaded",
                     timeout: NAV_TIMEOUT,
-                }).catch(() => { });
+                }).catch((err) => { navError = err; });
+
+                if (navError) {
+                    console.log(`  ⚠️ [${this._label}] Nav error on attempt ${attempt}: ${navError.message.substring(0, 150)}`);
+                }
 
                 // Wait for any JS-based redirects (LinkedIn SPA)
                 await page.waitForTimeout(2000);
 
                 const url = page.url();
+                console.log(`  🔍 [${this._label}] Landed URL (attempt ${attempt}): ${url.substring(0, 120)}`);
 
                 if (
                     url.includes("/login") ||
@@ -173,9 +179,21 @@ export class LinkedInClient {
                     url === "about:blank" ||
                     url.startsWith("chrome-error://")
                 ) {
-                    const reason = url.startsWith("chrome-error://")
-                        ? "proxy cannot connect to LinkedIn (chrome-error)"
-                        : `auth redirect → ${url.split("?")[0]}`;
+                    // Take a screenshot for debugging when session fails
+                    try {
+                        const screenshotPath = `/tmp/linkedin-session-fail-${this._label}-attempt${attempt}.png`;
+                        await page.screenshot({ path: screenshotPath, fullPage: false });
+                        console.log(`  📸 [${this._label}] Screenshot saved: ${screenshotPath}`);
+                    } catch { }
+
+                    let reason;
+                    if (url.startsWith("chrome-error://")) {
+                        reason = `chrome-error (full URL: ${url.substring(0, 200)})`;
+                    } else if (url === "about:blank") {
+                        reason = `blank page${navError ? ` — nav error: ${navError.message.substring(0, 100)}` : ""}`;
+                    } else {
+                        reason = `auth redirect → ${url.split("?")[0]}`;
+                    }
                     console.log(`  ⚠️ [${this._label}] Session failed: ${reason} (attempt ${attempt})`);
                     await page.close().catch(() => { });
                     continue;
