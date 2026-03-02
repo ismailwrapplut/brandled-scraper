@@ -41,9 +41,9 @@ export class LinkedInClient {
     constructor(accountPair = null) {
         this.browser = null;
         this.context = null;
-        this._page  = null;           // persistent session page — kept alive for all API calls
+        this._page = null;           // persistent session page — kept alive for all API calls
         this._sessionValid = false;
-        this._csrfToken    = null;
+        this._csrfToken = null;
 
         if (accountPair) {
             this._liAt = accountPair.liAt;
@@ -68,7 +68,7 @@ export class LinkedInClient {
 
     async initialize() {
         const launchOptions = {
-            headless: false,
+            headless: "new",
             args: [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -141,7 +141,7 @@ export class LinkedInClient {
         if (!this._liAt) throw new Error("No li_at cookie configured");
 
         // Clean up stale page
-        if (this._page && !this._page.isClosed()) await this._page.close().catch(() => {});
+        if (this._page && !this._page.isClosed()) await this._page.close().catch(() => { });
         this._page = null;
         this._sessionValid = false;
 
@@ -159,7 +159,7 @@ export class LinkedInClient {
                 await page.goto(entryUrl, {
                     waitUntil: "domcontentloaded",
                     timeout: NAV_TIMEOUT,
-                }).catch(() => {});
+                }).catch(() => { });
 
                 // Wait for any JS-based redirects (LinkedIn SPA)
                 await page.waitForTimeout(2000);
@@ -177,7 +177,7 @@ export class LinkedInClient {
                         ? "proxy cannot connect to LinkedIn (chrome-error)"
                         : `auth redirect → ${url.split("?")[0]}`;
                     console.log(`  ⚠️ [${this._label}] Session failed: ${reason} (attempt ${attempt})`);
-                    await page.close().catch(() => {});
+                    await page.close().catch(() => { });
                     continue;
                 }
 
@@ -189,7 +189,7 @@ export class LinkedInClient {
                 return;
             } catch (err) {
                 console.log(`  ⚠️ [${this._label}] Session attempt ${attempt} error: ${err.message.substring(0, 100)}`);
-                await page.close().catch(() => {});
+                await page.close().catch(() => { });
             }
         }
 
@@ -222,26 +222,26 @@ export class LinkedInClient {
 
         const csrfToken = this._csrfToken || this._jsessionId?.replace(/^"|"$/g, "") || "";
         const headers = {
-            "accept":                    "application/vnd.linkedin.normalized+json+2.1",
-            "accept-language":           "en-US,en;q=0.9",
-            "csrf-token":                csrfToken,
+            "accept": "application/vnd.linkedin.normalized+json+2.1",
+            "accept-language": "en-US,en;q=0.9",
+            "csrf-token": csrfToken,
             "x-restli-protocol-version": "2.0.0",
-            "x-li-lang":                 "en_US",
-            "x-li-page-instance":        "urn:li:page:d_flagship3_profile_view_base",
-            "x-li-track":                JSON.stringify({ clientVersion: "1.13.15427", mpVersion: "1.13.15427", osName: "web", timezoneOffset: -5, timezone: "America/Chicago", mpName: "voyager-web" }),
+            "x-li-lang": "en_US",
+            "x-li-page-instance": "urn:li:page:d_flagship3_profile_view_base",
+            "x-li-track": JSON.stringify({ clientVersion: "1.13.15427", mpVersion: "1.13.15427", osName: "web", timezoneOffset: -5, timezone: "America/Chicago", mpName: "voyager-web" }),
         };
 
         try {
             const result = await this._page.evaluate(
                 async ({ fetchUrl, fetchHeaders, timeout }) => {
                     try {
-                        const ctrl  = new AbortController();
+                        const ctrl = new AbortController();
                         const timer = setTimeout(() => ctrl.abort(), timeout);
-                        const res   = await fetch(fetchUrl, {
-                            method:      "GET",
-                            headers:     fetchHeaders,
+                        const res = await fetch(fetchUrl, {
+                            method: "GET",
+                            headers: fetchHeaders,
                             credentials: "include",
-                            signal:      ctrl.signal,
+                            signal: ctrl.signal,
                         });
                         clearTimeout(timer);
                         let data;
@@ -616,11 +616,11 @@ export class LinkedInClient {
         try {
             const buttons = await page.$$('button.feed-shared-inline-show-more-text__button, button[aria-label*="see more"], span.feed-shared-inline-show-more-text__see-more-less-toggle');
             for (const btn of buttons.slice(0, 30)) {
-                try { 
+                try {
                     await btn.hover();
                     await page.waitForTimeout(Math.random() * 300 + 200);
-                    await btn.click(); 
-                    await page.waitForTimeout(Math.random() * 800 + 400); 
+                    await btn.click();
+                    await page.waitForTimeout(Math.random() * 800 + 400);
                 } catch { }
             }
         } catch { }
@@ -912,15 +912,15 @@ export class LinkedInClient {
 
     async cleanup() {
         if (this._page && !this._page.isClosed()) {
-            await this._page.close().catch(() => {});
+            await this._page.close().catch(() => { });
         }
         this._page = null;
         if (this.browser) {
-            await this.browser.close().catch(() => {});
+            await this.browser.close().catch(() => { });
             this.browser = null;
             this.context = null;
         }
         this._sessionValid = false;
-        this._csrfToken    = null;
+        this._csrfToken = null;
     }
 }
