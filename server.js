@@ -13,11 +13,15 @@
 import "dotenv/config";              // must be FIRST — loads .env before any other module reads process.env
 import express from "express";
 import { LinkedInClient } from "./clients/linkedin-client.js";
+import { LinkedInAccountPool } from "./clients/linkedin-account-pool.js";
 import { XClient } from "./clients/x-client.js";
 import { seedTopPosts } from "./jobs/seed.js";
 
 const app = express();
 app.use(express.json());
+
+// Shared LinkedIn account pool — loaded once at startup
+const linkedInPool = new LinkedInAccountPool().load();
 
 const PORT = process.env.SCRAPER_PORT || 3001;
 const API_SECRET = process.env.SCRAPER_API_SECRET || "brandled-scraper-secret";
@@ -48,33 +52,46 @@ app.post("/api/scrape/linkedin", authenticate, async (req, res) => {
         return res.status(400).json({ error: "username is required" });
     }
 
-    const client = new LinkedInClient();
+    const profileUrl = `https://www.linkedin.com/in/${username}`;
+    const healthyPairs = linkedInPool.allHealthy();
 
-    try {
-        console.log(`[Scraper] Starting LinkedIn scrape for: ${username}`);
-        await client.initialize();
-
-        const profileUrl = `https://www.linkedin.com/in/${username}`;
-        const posts = await client.fetchCreatorPosts(profileUrl, maxPosts);
-
-        console.log(`[Scraper] LinkedIn scrape complete: ${posts.length} posts for ${username}`);
-
-        res.json({
-            success: true,
-            platform: "linkedin",
-            username,
-            postsCount: posts.length,
-            posts,
-        });
-    } catch (error) {
-        console.error(`[Scraper] LinkedIn scrape error for ${username}:`, error.message);
-        res.status(500).json({
-            error: "Scraping failed",
-            message: error.message,
-        });
-    } finally {
-        await client.cleanup();
+    if (healthyPairs.length === 0) {
+        return res.status(503).json({ error: "No healthy LinkedIn accounts available" });
     }
+
+    // Try each healthy account pair until one succeeds
+    for (const pair of healthyPairs) {
+        const client = new LinkedInClient(pair);
+        try {
+            console.log(`[Scraper] Starting LinkedIn scrape for: ${username} [${pair.label}]`);
+            await client.initialize();
+
+            const posts = await client.fetchCreatorPosts(profileUrl, maxPosts);
+
+            linkedInPool.reportSuccess(pair);
+            console.log(`[Scraper] LinkedIn scrape complete: ${posts.length} posts for ${username} [${pair.label}]`);
+
+            return res.json({
+                success: true,
+                platform: "linkedin",
+                username,
+                postsCount: posts.length,
+                posts,
+                _account: pair.label,
+            });
+        } catch (error) {
+            console.error(`[Scraper] LinkedIn scrape error for ${username} [${pair.label}]:`, error.message);
+            linkedInPool.reportFailure(pair, error.message);
+        } finally {
+            await client.cleanup();
+        }
+    }
+
+    // All pairs failed
+    res.status(500).json({
+        error: "Scraping failed",
+        message: "All LinkedIn account pairs failed for this request",
+    });
 });
 
 /**
@@ -134,29 +151,43 @@ app.post("/api/scrape/both", authenticate, async (req, res) => {
 
     const results = { linkedin: null, x: null };
 
-    // Scrape LinkedIn if username provided
+    // Scrape LinkedIn if username provided (with pool rotation + fallback)
     if (linkedinUsername) {
-        const liClient = new LinkedInClient();
-        try {
-            await liClient.initialize();
-            const profileUrl = `https://www.linkedin.com/in/${linkedinUsername}`;
-            const [posts, profile] = await Promise.all([
-                liClient.fetchCreatorPosts(profileUrl, maxPosts),
-                liClient.fetchCreatorProfile(profileUrl),
-            ]);
-            results.linkedin = {
-                success: true,
-                username: linkedinUsername,
-                postsCount: posts.length,
-                posts,
-                profile,
-            };
-            console.log(`[Scraper] LinkedIn: ${posts.length} posts for ${linkedinUsername}`);
-        } catch (error) {
-            results.linkedin = { success: false, error: error.message };
-            console.error(`[Scraper] LinkedIn error:`, error.message);
-        } finally {
-            await liClient.cleanup();
+        const healthyPairs = linkedInPool.allHealthy();
+        let linkedinDone = false;
+
+        for (const pair of healthyPairs) {
+            if (linkedinDone) break;
+            const liClient = new LinkedInClient(pair);
+            try {
+                await liClient.initialize();
+                const profileUrl = `https://www.linkedin.com/in/${linkedinUsername}`;
+                const [posts, profile] = await Promise.all([
+                    liClient.fetchCreatorPosts(profileUrl, maxPosts),
+                    liClient.fetchCreatorProfile(profileUrl),
+                ]);
+                linkedInPool.reportSuccess(pair);
+                results.linkedin = {
+                    success: true,
+                    username: linkedinUsername,
+                    postsCount: posts.length,
+                    posts,
+                    profile,
+                    _account: pair.label,
+                };
+                console.log(`[Scraper] LinkedIn: ${posts.length} posts for ${linkedinUsername} [${pair.label}]`);
+                linkedinDone = true;
+            } catch (error) {
+                linkedInPool.reportFailure(pair, error.message);
+                results.linkedin = { success: false, error: error.message };
+                console.error(`[Scraper] LinkedIn error [${pair.label}]:`, error.message);
+            } finally {
+                await liClient.cleanup();
+            }
+        }
+
+        if (healthyPairs.length === 0) {
+            results.linkedin = { success: false, error: "No healthy LinkedIn accounts available" };
         }
     }
 
