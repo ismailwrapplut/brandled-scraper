@@ -68,7 +68,7 @@ export class LinkedInClient {
 
     async initialize() {
         const launchOptions = {
-            headless: "new",
+            headless: true,
             args: [
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
