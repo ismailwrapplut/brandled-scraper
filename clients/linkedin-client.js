@@ -21,6 +21,7 @@
  */
 
 import { chromium } from "playwright";
+import { randomUUID } from "crypto";
 
 const SCROLL_DELAY_MIN = 2500;
 const SCROLL_DELAY_MAX = 5000;
@@ -44,6 +45,10 @@ export class LinkedInClient {
         this._page = null;           // persistent session page — kept alive for all API calls
         this._sessionValid = false;
         this._csrfToken = null;
+
+        // Unique session ID — used for ScrapeOps sticky sessions so the same
+        // residential IP is used for every request within this scraping job.
+        this._stickySessionId = randomUUID().replace(/-/g, "").substring(0, 16);
 
         if (accountPair) {
             this._liAt = accountPair.liAt;
@@ -78,12 +83,20 @@ export class LinkedInClient {
         };
 
         if (this._proxyServer) {
+            // For ScrapeOps residential proxies, append sticky session ID to username
+            // so all requests in this scraping job use the same residential IP.
+            // ScrapeOps format: scrapeops.country=us.session=<id>
+            let proxyUsername = this._proxyUsername;
+            if (proxyUsername.startsWith("scrapeops.") && !proxyUsername.includes(".session=")) {
+                proxyUsername = `${proxyUsername}.session=${this._stickySessionId}`;
+            }
+
             launchOptions.proxy = {
                 server: this._proxyServer,
-                username: this._proxyUsername,
+                username: proxyUsername,
                 password: this._proxyPassword,
             };
-            console.log(`  🔀 [${this._label}] Using proxy: ${this._proxyServer}`);
+            console.log(`  🔀 [${this._label}] Using proxy: ${this._proxyServer} (session: ${this._stickySessionId})`);
         }
 
         this.browser = await chromium.launch(launchOptions);
