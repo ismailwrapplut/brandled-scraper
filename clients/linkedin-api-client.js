@@ -4,22 +4,29 @@
  * Makes direct HTTP requests to LinkedIn's Voyager API, routing through
  * a residential proxy (ScrapeOps). No Playwright or browser needed.
  *
- * WHY THIS WORKS:
- *   - Traffic is routed through a residential proxy, so LinkedIn sees a
- *     real consumer IP. TLS terminates at the proxy, bypassing TLS fingerprinting.
- *   - We send exact Chrome headers (captured from a real browser session).
- *   - No browser startup overhead — 10x faster per scrape.
+ * RATE LIMITING STRATEGY:
+ *   - Token bucket: max 8 requests/window, refills every 10s
+ *   - Minimum 600ms gap between any two requests
+ *   - On 429: exponential backoff starting at 60s, up to 5 retries
+ *   - Inter-page delay: 1-2.5s with jitter
  *
- * REQUIREMENTS:
- *   - A valid li_at cookie (refresh from your browser when expired)
- *   - ScrapeOps residential proxy credentials in .env
+ * USAGE:
+ *   const client = new LinkedInApiClient(accountPair);
+ *   client.initialize();
+ *   const { profile, posts } = await client.fetchCreatorFull('whyismail', 500);
+ *   await client.cleanup();
  */
 
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { randomUUID } from 'crypto';
 
-const FETCH_TIMEOUT_MS = 20000;
-const MAX_RETRIES = 2;
+// ─── Rate Limit Config ────────────────────────────────────────────────────────
+const FETCH_TIMEOUT_MS = 25000;
+const MIN_REQUEST_GAP_MS = 600;       // minimum ms between any two requests
+const TOKEN_BUCKET_MAX = 8;         // max burst requests
+const TOKEN_BUCKET_REFILL_MS = 10000; // refill bucket every 10s
+const MAX_429_RETRIES = 5;         // max retries on rate limit
+const BASE_BACKOFF_MS = 60000;     // 60s base backoff on 429
 
 export class LinkedInApiClient {
     /**
@@ -28,6 +35,11 @@ export class LinkedInApiClient {
     constructor(accountPair = null) {
         this._agent = null;
         this._stickySessionId = randomUUID().replace(/-/g, '').substring(0, 16);
+
+        // Token bucket for rate limiting
+        this._tokenBucket = TOKEN_BUCKET_MAX;
+        this._lastTokenRefill = Date.now();
+        this._lastRequestTime = 0;
 
         if (accountPair) {
             this._liAt = accountPair.liAt;
@@ -45,7 +57,6 @@ export class LinkedInApiClient {
             this._label = 'legacy-env';
         }
 
-        // Clean up cookie values
         this._liAt = this._liAt.trim().replace(/^["']|["']$/g, '');
         this._jsessionId = this._jsessionId.replace(/"/g, '').trim();
     }
@@ -58,25 +69,53 @@ export class LinkedInApiClient {
         if (!this._liAt) throw new Error(`[${this._label}] No li_at cookie configured`);
 
         if (this._proxyServer) {
-            // Build ScrapeOps sticky session proxy URL
-            // Format: http://scrapeops.country=us.session=<id>:<apikey>@residential-proxy.scrapeops.io:8181
             let proxyUsername = this._proxyUsername;
             if (proxyUsername.startsWith('scrapeops.') && !proxyUsername.includes('.session=')) {
                 proxyUsername = `${proxyUsername}.session=${this._stickySessionId}`;
             }
-
-            // Build the authenticated proxy URL
             const proxyUrl = new URL(this._proxyServer);
             proxyUrl.username = encodeURIComponent(proxyUsername);
             proxyUrl.password = encodeURIComponent(this._proxyPassword);
-
             this._agent = new ProxyAgent(proxyUrl.toString());
             console.log(`  🔀 [${this._label}] Proxy: ${this._proxyServer} (session: ${this._stickySessionId})`);
         } else {
-            console.log(`  🌐 [${this._label}] No proxy — using direct connection`);
+            console.log(`  🌐 [${this._label}] Direct connection (no proxy)`);
         }
 
-        console.log(`✅ [${this._label}] LinkedIn API client ready (no browser)`);
+        console.log(`✅ [${this._label}] LinkedIn API client ready`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Rate Limiting — Token Bucket
+    // ═══════════════════════════════════════════════════════════════════
+
+    async _acquireToken() {
+        // Refill bucket based on elapsed time
+        const now = Date.now();
+        const elapsed = now - this._lastTokenRefill;
+        if (elapsed >= TOKEN_BUCKET_REFILL_MS) {
+            const refills = Math.floor(elapsed / TOKEN_BUCKET_REFILL_MS);
+            this._tokenBucket = Math.min(TOKEN_BUCKET_MAX, this._tokenBucket + refills);
+            this._lastTokenRefill = now;
+        }
+
+        // If bucket empty, wait for next refill
+        if (this._tokenBucket <= 0) {
+            const waitMs = TOKEN_BUCKET_REFILL_MS - (Date.now() - this._lastTokenRefill) + 100;
+            console.log(`  🪣 [${this._label}] Rate bucket empty — waiting ${(waitMs / 1000).toFixed(1)}s`);
+            await this._sleep(waitMs);
+            this._tokenBucket = TOKEN_BUCKET_MAX;
+            this._lastTokenRefill = Date.now();
+        }
+
+        // Enforce minimum gap between requests
+        const gap = Date.now() - this._lastRequestTime;
+        if (gap < MIN_REQUEST_GAP_MS) {
+            await this._sleep(MIN_REQUEST_GAP_MS - gap + Math.random() * 200);
+        }
+
+        this._tokenBucket--;
+        this._lastRequestTime = Date.now();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -111,51 +150,63 @@ export class LinkedInApiClient {
         };
     }
 
-    async _apiGet(url, retries = MAX_RETRIES) {
+    async _apiGet(url) {
+        await this._acquireToken();
+
         const fetchOptions = {
             method: 'GET',
-            headers: this._buildHeaders(`https://www.linkedin.com/in/${url.includes('memberIdentity') ? '' : 'feed'}/`),
+            headers: this._buildHeaders(),
             signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         };
+        if (this._agent) fetchOptions.dispatcher = this._agent;
 
-        if (this._agent) {
-            fetchOptions.dispatcher = this._agent;
-        }
+        let backoffMs = BASE_BACKOFF_MS;
 
-        for (let attempt = 1; attempt <= retries + 1; attempt++) {
+        for (let attempt = 1; attempt <= MAX_429_RETRIES + 1; attempt++) {
             try {
                 const res = await undiciFetch(url, fetchOptions);
                 const text = await res.text();
 
+                // Auth failure — cookie expired, don't retry
                 if (res.status === 401 || res.status === 403) {
-                    console.log(`  ⚠️ [${this._label}] API ${res.status} — cookie may be expired`);
+                    console.log(`  ⚠️ [${this._label}] ${res.status} — cookie expired or unauthorized`);
                     return { ok: false, status: res.status, data: null };
                 }
 
+                // Rate limit — exponential backoff
                 if (res.status === 429) {
-                    const retryAfter = res.headers.get('retry-after') || '30';
-                    console.log(`  ⚠️ [${this._label}] Rate limited (429). Waiting ${retryAfter}s...`);
-                    await this._sleep(parseInt(retryAfter) * 1000);
+                    const serverWait = parseInt(res.headers.get('retry-after') || '0') * 1000;
+                    const waitMs = Math.max(serverWait, backoffMs) + Math.random() * 5000;
+                    console.log(`  ⏳ [${this._label}] 429 Rate limited (attempt ${attempt}). Backing off ${(waitMs / 1000).toFixed(0)}s...`);
+                    if (attempt > MAX_429_RETRIES) {
+                        return { ok: false, status: 429, data: null };
+                    }
+                    await this._sleep(waitMs);
+                    backoffMs = Math.min(backoffMs * 2, 600000); // cap at 10 min
+                    await this._acquireToken();
                     continue;
                 }
 
                 if (!res.ok) {
-                    console.log(`  ⚠️ [${this._label}] API ${res.status}: ${text.substring(0, 100)}`);
+                    console.log(`  ⚠️ [${this._label}] API ${res.status}: ${text.substring(0, 80)}`);
                     return { ok: false, status: res.status, data: null };
                 }
 
                 try {
                     return { ok: true, status: res.status, data: JSON.parse(text) };
                 } catch {
-                    console.log(`  ⚠️ [${this._label}] Failed to parse JSON response`);
+                    console.log(`  ⚠️ [${this._label}] JSON parse error for: ${url.substring(0, 80)}`);
                     return { ok: false, status: res.status, data: null };
                 }
+
             } catch (err) {
-                if (attempt <= retries) {
-                    console.log(`  ⚠️ [${this._label}] Fetch error (attempt ${attempt}): ${err.message.substring(0, 100)}, retrying...`);
-                    await this._sleep(2000 * attempt);
+                const isTimeout = err.name === 'TimeoutError' || err.code === 'UND_ERR_CONNECT_TIMEOUT';
+                if (attempt <= MAX_429_RETRIES) {
+                    const waitMs = 3000 * attempt + Math.random() * 2000;
+                    console.log(`  ⚠️ [${this._label}] ${isTimeout ? 'Timeout' : 'Fetch error'} (attempt ${attempt}), retrying in ${(waitMs / 1000).toFixed(1)}s...`);
+                    await this._sleep(waitMs);
                 } else {
-                    console.log(`  ❌ [${this._label}] Fetch failed after ${attempt} attempts: ${err.message.substring(0, 100)}`);
+                    console.log(`  ❌ [${this._label}] Failed: ${err.message.substring(0, 100)}`);
                     return { ok: false, status: 0, error: err.message };
                 }
             }
@@ -164,80 +215,215 @@ export class LinkedInApiClient {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  Profile URN Resolution
+    //  ★ PRIMARY METHOD: fetchCreatorFull
+    //  Returns BOTH profile details AND posts in one call.
+    //  Used for initial onboarding scrape.
     // ═══════════════════════════════════════════════════════════════════
 
-    async _resolveProfileUrn(profileSlug) {
-        console.log(`  🔍 [${this._label}] Resolving URN for "${profileSlug}"...`);
+    /**
+     * @param {string} profileUrl  - LinkedIn profile URL or username slug
+     * @param {number} maxPosts    - Max posts to fetch (default 500 for onboarding)
+     * @returns {{ profile: ProfileData, posts: Post[] }}
+     */
+    async fetchCreatorFull(profileUrl, maxPosts = 500) {
+        const profileSlug = this._extractProfileSlug(profileUrl);
+        console.log(`\n  🚀 [${this._label}] Full scrape of "${profileSlug}" (max ${maxPosts} posts)`);
 
-        const resp = await this._apiGet(
-            `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(profileSlug)}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
-        );
+        // Fetch profile and URN in one API call
+        const { profile, profileUrn } = await this._fetchProfileAndUrn(profileSlug);
 
-        if (!resp.ok || !resp.data) {
-            console.log(`  ❌ [${this._label}] URN resolution failed (${resp.status})`);
-            return null;
-        }
+        // Fetch posts
+        const posts = profileUrn
+            ? await this._paginatePosts(profileUrn, profileSlug, maxPosts)
+            : await this._fetchPostsViaActivityAPI(profileSlug, maxPosts);
 
-        // Try *elements first (most reliable)
-        const elements = resp.data?.data?.['*elements'];
-        if (Array.isArray(elements) && elements.length > 0) {
-            console.log(`  ✅ [${this._label}] URN resolved: ${elements[0]}`);
-            return elements[0];
-        }
-
-        // Try included array
-        const included = resp.data?.included || [];
-        const entity = included.find(i =>
-            i.$type === 'com.linkedin.voyager.dash.identity.profile.Profile' &&
-            i.entityUrn &&
-            i.publicIdentifier === profileSlug
-        );
-        if (entity) {
-            console.log(`  ✅ [${this._label}] URN resolved (included): ${entity.entityUrn}`);
-            return entity.entityUrn;
-        }
-
-        console.log(`  ❌ [${this._label}] Could not extract URN from response`);
-        return null;
+        return { profile, posts };
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  Main: fetchCreatorPosts
+    //  Profile: fetch details + URN in one shot
+    // ═══════════════════════════════════════════════════════════════════
+
+    async _fetchProfileAndUrn(profileSlug) {
+        console.log(`  👤 [${this._label}] Fetching profile: ${profileSlug}`);
+
+        // Decoration that returns name, headline, photo, networkInfo (followers)
+        const resp = await this._apiGet(
+            `https://www.linkedin.com/voyager/api/identity/dash/profiles` +
+            `?q=memberIdentity&memberIdentity=${encodeURIComponent(profileSlug)}` +
+            `&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
+        );
+
+        let profile = {
+            slug: profileSlug,
+            name: profileSlug,
+            firstName: '',
+            lastName: '',
+            headline: '',
+            profileImageUrl: '',
+            followersCount: 0,
+            connectionsCount: 0,
+        };
+
+        let profileUrn = null;
+
+        if (!resp.ok || !resp.data) {
+            console.log(`  ⚠️ [${this._label}] Profile fetch failed (${resp.status})`);
+            return { profile, profileUrn };
+        }
+
+        try {
+            const included = resp.data?.included || [];
+
+            // Extract URN from *elements
+            const elements = resp.data?.data?.['*elements'] || [];
+            if (elements.length > 0) profileUrn = elements[0];
+
+            // Find profile entity
+            const profileEntity = included.find(i =>
+                (i.$type === 'com.linkedin.voyager.dash.identity.profile.Profile' ||
+                    i.$type?.includes('.Profile')) &&
+                (i.publicIdentifier === profileSlug || i.firstName)
+            );
+
+            if (profileEntity) {
+                if (!profileUrn && profileEntity.entityUrn) profileUrn = profileEntity.entityUrn;
+
+                profile.firstName = profileEntity.firstName || '';
+                profile.lastName = profileEntity.lastName || '';
+                profile.name = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profileSlug;
+                profile.headline = profileEntity.headline || profileEntity.occupation || '';
+
+                // Profile image — walk the nested structure
+                const photoRef = profileEntity.profilePicture
+                    || profileEntity.photo
+                    || profileEntity.image;
+
+                if (photoRef) {
+                    const artifacts =
+                        photoRef?.displayImageReference?.vectorImage?.artifacts ||
+                        photoRef?.displayImageWithFrameReference?.artifacts ||
+                        photoRef?.croppedImage?.artifacts ||
+                        photoRef?.artifacts;
+
+                    const rootUrl =
+                        photoRef?.displayImageReference?.vectorImage?.rootUrl ||
+                        photoRef?.displayImageWithFrameReference?.rootUrl ||
+                        photoRef?.croppedImage?.rootUrl ||
+                        photoRef?.rootUrl ||
+                        '';
+
+                    if (Array.isArray(artifacts) && artifacts.length > 0) {
+                        // Pick the highest resolution artifact
+                        const best = artifacts.reduce((a, b) =>
+                            (b.width || 0) > (a.width || 0) ? b : a
+                        );
+                        const segment = best.fileIdentifyingUrlPathSegment || '';
+                        profile.profileImageUrl = segment.startsWith('http')
+                            ? segment
+                            : `${rootUrl}${segment}`;
+                    }
+                }
+            }
+
+            // Follower / connection counts — look in networkInfo or followerCount entities
+            const networkInfo = included.find(i =>
+                i.$type?.includes('NetworkInfo') ||
+                i.$type?.includes('ProfileNetworkInfo') ||
+                (i.followersCount !== undefined)
+            );
+
+            if (networkInfo) {
+                profile.followersCount = networkInfo.followersCount || networkInfo.followerCount || 0;
+                profile.connectionsCount = networkInfo.connectionsCount || networkInfo.connectionCount || 0;
+            }
+
+            // Also try FollowingState for follower count
+            const followingState = included.find(i =>
+                i.$type === 'com.linkedin.voyager.dash.feed.FollowingState' &&
+                i.followerCount !== undefined
+            );
+            if (followingState && !profile.followersCount) {
+                profile.followersCount = followingState.followerCount || 0;
+            }
+
+            if (profileUrn) {
+                console.log(`  ✅ [${this._label}] Profile: ${profile.name} | ${profile.headline?.substring(0, 60)} | 👥 ${profile.followersCount} followers`);
+            }
+
+        } catch (err) {
+            console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
+        }
+
+        // If follower count still 0, try dedicated networkinfo endpoint
+        if (profile.followersCount === 0 && profileUrn) {
+            await this._enrichFollowerCount(profileSlug, profile);
+        }
+
+        return { profile, profileUrn };
+    }
+
+    async _enrichFollowerCount(profileSlug, profile) {
+        const resp = await this._apiGet(
+            `https://www.linkedin.com/voyager/api/identity/profiles/${profileSlug}/networkinfo`
+        );
+        if (!resp.ok || !resp.data) return;
+
+        try {
+            // REST response
+            const data = resp.data?.data || resp.data;
+            profile.followersCount = data?.followersCount || data?.followerCount || profile.followersCount;
+            profile.connectionsCount = data?.connectionsCount || data?.connectionCount || profile.connectionsCount;
+            console.log(`  📊 [${this._label}] Network info: ${profile.followersCount} followers, ${profile.connectionsCount} connections`);
+        } catch { /* swallow */ }
+    }
+
+    // Public alias for profile-only fetches
+    async fetchCreatorProfile(profileUrl) {
+        const profileSlug = this._extractProfileSlug(profileUrl);
+        const { profile } = await this._fetchProfileAndUrn(profileSlug);
+        return profile;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Posts: paginated GraphQL feed
     // ═══════════════════════════════════════════════════════════════════
 
     async fetchCreatorPosts(profileUrl, maxPosts = 25) {
         const profileSlug = this._extractProfileSlug(profileUrl);
-        if (!profileSlug) throw new Error(`Could not extract slug from: ${profileUrl}`);
-
-        // Step 1: Resolve URN
         const profileUrn = await this._resolveProfileUrn(profileSlug);
-        if (!profileUrn) {
-            // Try activity API as fallback (doesn't need URN)
-            console.log(`  ⚠️ [${this._label}] URN failed, trying activity API...`);
-            return this._fetchPostsViaActivityAPI(profileSlug, maxPosts);
-        }
+        return profileUrn
+            ? this._paginatePosts(profileUrn, profileSlug, maxPosts)
+            : this._fetchPostsViaActivityAPI(profileSlug, maxPosts);
+    }
 
-        // Step 2: Paginate through GraphQL feed
-        console.log(`  📡 [${this._label}] Fetching posts via GraphQL (target: ${maxPosts})...`);
+    async _resolveProfileUrn(profileSlug) {
+        const { profileUrn } = await this._fetchProfileAndUrn(profileSlug);
+        return profileUrn;
+    }
+
+    async _paginatePosts(profileUrn, profileSlug, maxPosts) {
+        const isUnlimited = maxPosts >= 10000;
+        const effectiveMax = isUnlimited ? Infinity : maxPosts;
+        const maxPages = isUnlimited ? 200 : Math.min(Math.ceil(maxPosts / 20) + 2, 200);
+        const count = 20;
+
+        console.log(`  📡 [${this._label}] Paginating posts (target: ${isUnlimited ? 'ALL' : maxPosts}, max ${maxPages} pages)...`);
+
         const allPosts = [];
         const seenUrns = new Set();
         let start = 0;
         let paginationToken = null;
-        const count = 20;
         let pageNum = 0;
-        const maxPages = Math.min(Math.ceil(maxPosts / count) + 3, 10);
         let consecutiveEmpty = 0;
+        const startTime = Date.now();
 
-        while (allPosts.length < maxPosts && pageNum < maxPages) {
+        while (allPosts.length < effectiveMax && pageNum < maxPages) {
             pageNum++;
 
-            let variables;
-            if (pageNum === 1 || !paginationToken) {
-                variables = `(count:${count},start:${start},profileUrn:${encodeURIComponent(profileUrn)})`;
-            } else {
-                variables = `(count:${count},start:${start},paginationToken:${encodeURIComponent(paginationToken)},profileUrn:${encodeURIComponent(profileUrn)})`;
-            }
+            const variables = paginationToken && pageNum > 1
+                ? `(count:${count},start:${start},paginationToken:${encodeURIComponent(paginationToken)},profileUrn:${encodeURIComponent(profileUrn)})`
+                : `(count:${count},start:${start},profileUrn:${encodeURIComponent(profileUrn)})`;
 
             const feedUrl =
                 `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
@@ -247,18 +433,18 @@ export class LinkedInApiClient {
             const feedResp = await this._apiGet(feedUrl);
 
             if (!feedResp.ok || !feedResp.data) {
-                console.log(`  ⚠️ [${this._label}] GraphQL page ${pageNum} failed (${feedResp.status})`);
+                console.log(`  ⚠️ [${this._label}] Feed page ${pageNum} failed (${feedResp.status})`);
+                if (feedResp.status === 429) break; // already backed off, give up cleanly
                 break;
             }
 
-            // Extract pagination token
-            const feedMeta = feedResp.data?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.metadata;
-            if (feedMeta?.paginationToken) paginationToken = feedMeta.paginationToken;
+            // Extract pagination token for next page
+            const meta = feedResp.data?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.metadata;
+            if (meta?.paginationToken) paginationToken = meta.paginationToken;
 
-            const posts = this._parseGraphQLPosts(feedResp.data, profileSlug);
-
+            const pagePosts = this._parseGraphQLPosts(feedResp.data, profileSlug);
             let newCount = 0;
-            for (const p of posts) {
+            for (const p of pagePosts) {
                 if (!seenUrns.has(p.urn)) {
                     seenUrns.add(p.urn);
                     allPosts.push(p);
@@ -266,34 +452,55 @@ export class LinkedInApiClient {
                 }
             }
 
-            const rawUpdateCount = (feedResp.data?.included || []).filter(
+            const rawUpdates = (feedResp.data?.included || []).filter(
                 i => i.$type === 'com.linkedin.voyager.dash.feed.Update'
             ).length;
-            if (rawUpdateCount === 0) break;
+
+            // Progress every 5 pages
+            if (pageNum % 5 === 0 || rawUpdates === 0) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                console.log(`  📊 [${this._label}] Page ${pageNum}: ${allPosts.length} posts (${elapsed}s)`);
+            }
+
+            if (rawUpdates === 0) {
+                console.log(`  ℹ️ [${this._label}] No more updates — end of feed`);
+                break;
+            }
 
             if (newCount === 0) {
-                if (++consecutiveEmpty >= 3) break;
+                if (++consecutiveEmpty >= 3) {
+                    console.log(`  ℹ️ [${this._label}] 3 consecutive empty pages — stopping`);
+                    break;
+                }
             } else {
                 consecutiveEmpty = 0;
             }
 
             start += count;
 
-            // Human-like delay between pages
-            await this._sleep(1500 + Math.random() * 2000);
+            // Check paging total
+            const paging = meta?.paging || feedResp.data?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.paging;
+            if (paging?.total > 0 && start >= paging.total) {
+                console.log(`  ℹ️ [${this._label}] Reached paging total (${paging.total})`);
+                break;
+            }
 
-            const paging = feedResp.data?.data?.data?.feedDashProfileUpdatesByMemberShareFeed?.paging || feedResp.data?.data?.paging;
-            if (paging?.total !== undefined && paging.total > 0 && start >= paging.total) break;
+            // Inter-page delay with jitter — varies to appear human-like
+            const delay = pageNum <= 3
+                ? 1200 + Math.random() * 1300   // first 3 pages: 1.2–2.5s
+                : 700 + Math.random() * 1000;   // subsequent: 0.7–1.7s
+            await this._sleep(delay);
         }
 
         const deduped = this._deduplicatePosts(allPosts);
         deduped.sort((a, b) => new Date(b.postedAt || 0) - new Date(a.postedAt || 0));
-        console.log(`  ✅ [${this._label}] ${deduped.length} posts via GraphQL (${pageNum} pages)`);
-        return deduped.slice(0, maxPosts);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`  ✅ [${this._label}] ${deduped.length} posts in ${elapsed}s (${pageNum} pages)`);
+        return isUnlimited ? deduped : deduped.slice(0, maxPosts);
     }
 
     async _fetchPostsViaActivityAPI(profileSlug, maxPosts) {
-        console.log(`  📡 [${this._label}] Trying activity API for "${profileSlug}"...`);
+        console.log(`  📡 [${this._label}] Activity API fallback for "${profileSlug}"...`);
 
         const url =
             `https://www.linkedin.com/voyager/api/feed/dash/profiles/updates` +
@@ -303,50 +510,11 @@ export class LinkedInApiClient {
         const resp = await this._apiGet(url);
         if (resp.ok && resp.data) return this._parseGraphQLPosts(resp.data, profileSlug);
 
-        // Older endpoint fallback
-        const altUrl =
-            `https://www.linkedin.com/voyager/api/identity/profileUpdatesV2` +
-            `?profileId=${profileSlug}&q=memberShareFeed&moduleKey=member-shares:phone` +
-            `&count=${Math.min(maxPosts, 50)}&start=0`;
-
-        const altResp = await this._apiGet(altUrl);
-        if (altResp.ok && altResp.data) return this._parseGraphQLPosts(altResp.data, profileSlug);
-
-        throw new Error(`Activity API failed (${resp.status}, alt ${altResp.status})`);
+        throw new Error(`Activity API failed (${resp.status})`);
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  Profile Fetching
-    // ═══════════════════════════════════════════════════════════════════
-
-    async fetchCreatorProfile(profileUrl) {
-        const profileSlug = this._extractProfileSlug(profileUrl);
-        const resp = await this._apiGet(
-            `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${profileSlug}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
-        );
-
-        if (!resp.ok || !resp.data) return { name: profileSlug, bio: '', image: '', followersCount: 0 };
-
-        const included = resp.data?.included || [];
-        const profile = included.find(i =>
-            i.$type === 'com.linkedin.voyager.dash.identity.profile.Profile' &&
-            i.publicIdentifier === profileSlug
-        );
-
-        if (!profile) return { name: profileSlug, bio: '', image: '', followersCount: 0 };
-
-        const networkInfo = included.find(i => i.$type?.includes('NetworkInfo') || i.followersCount !== undefined);
-
-        return {
-            name: [profile.firstName, profile.lastName].filter(Boolean).join(' '),
-            bio: profile.headline || '',
-            image: profile.profilePicture?.displayImageReference?.vectorImage?.artifacts?.[0]?.fileIdentifyingUrlPathSegment || '',
-            followersCount: networkInfo?.followersCount || 0,
-        };
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  Parsing (same logic as linkedin-client.js)
+    //  Parsing
     // ═══════════════════════════════════════════════════════════════════
 
     _parseGraphQLPosts(feedData, profileSlug) {
@@ -354,11 +522,13 @@ export class LinkedInApiClient {
         try {
             const included = feedData?.included || [];
 
+            // Build social activity counts map keyed by activity URN
             const countsMap = {};
             for (const item of included) {
                 if (item.$type === 'com.linkedin.voyager.dash.feed.SocialActivityCounts') {
-                    const activityUrn = item.urn || item.entityUrn?.replace('urn:li:fsd_socialActivityCounts:', '') || '';
-                    countsMap[activityUrn] = item;
+                    const key = (item.urn || item.entityUrn || '')
+                        .replace('urn:li:fsd_socialActivityCounts:', '');
+                    countsMap[key] = item;
                 }
             }
 
@@ -368,20 +538,21 @@ export class LinkedInApiClient {
                 try {
                     const commentary = item.commentary?.text?.text;
                     if (!commentary || commentary.length < 5) continue;
-                    if (item.resharedUpdate && (!commentary || commentary.length < 50)) continue;
+                    // Skip shallow reshares
+                    if (item.resharedUpdate && commentary.length < 50) continue;
 
-                    let activityUrn = '';
                     const activityMatch = item.entityUrn?.match(/urn:li:activity:(\d+)/);
-                    if (activityMatch) activityUrn = `urn:li:activity:${activityMatch[1]}`;
+                    const activityUrn = activityMatch ? `urn:li:activity:${activityMatch[1]}` : '';
+                    const counts = countsMap[activityUrn] || countsMap[item.entityUrn || ''] || {};
 
-                    const counts = countsMap[activityUrn] || {};
-
+                    // Decode timestamp from LinkedIn snowflake ID
                     let postedAt = null;
                     if (activityMatch) {
                         const ts = Number(BigInt(activityMatch[1]) >> 22n);
-                        if (ts > 1000000000000) postedAt = new Date(ts).toISOString();
+                        if (ts > 1_000_000_000_000) postedAt = new Date(ts).toISOString();
                     }
 
+                    // Detect media type
                     let postType = 'text';
                     const content = item.content;
                     if (content) {
@@ -415,7 +586,7 @@ export class LinkedInApiClient {
     // ═══════════════════════════════════════════════════════════════════
 
     _extractProfileSlug(profileUrl) {
-        if (!profileUrl.includes('/')) return profileUrl;
+        if (!profileUrl?.includes('/')) return profileUrl;
         const match = profileUrl.match(/linkedin\.com\/in\/([^/?#]+)/);
         return match ? match[1] : profileUrl;
     }
