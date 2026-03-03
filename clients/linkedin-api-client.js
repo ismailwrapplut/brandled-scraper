@@ -345,15 +345,28 @@ export class LinkedInApiClient {
 
             // ── Text-based follower count extraction ──────────────────────────
             if (profile.followersCount === 0) {
-                // Dump first Card entity to /tmp for diagnosis
-                const cardEntity = included.find(i => i.$type?.endsWith('.Card'));
-                if (cardEntity) {
-                    try {
-                        const fs = await import('fs');
-                        fs.writeFileSync('/tmp/linkedin-card-debug.json', JSON.stringify(cardEntity, null, 2));
-                        console.log(`  🗂️  [${this._label}] Card dumped → /tmp/linkedin-card-debug.json`);
-                    } catch { /* ignore fs errors */ }
-                }
+                // DEBUG: dump the FULL raw response so we can grep for "follower"
+                try {
+                    const fs = await import('fs');
+                    fs.writeFileSync('/tmp/linkedin-full-response.json', JSON.stringify(resp.data, null, 2));
+                    // Also specifically find the HERO card
+                    const heroCard = included.find(i =>
+                        i.$type?.endsWith('.Card') && i.entityUrn?.includes('HERO')
+                    );
+                    if (heroCard) {
+                        fs.writeFileSync('/tmp/linkedin-hero-card.json', JSON.stringify(heroCard, null, 2));
+                        console.log(`  🗂️  [${this._label}] HERO card dumped → /tmp/linkedin-hero-card.json`);
+                    } else {
+                        const cardUrns = included
+                            .filter(i => i.$type?.endsWith('.Card'))
+                            .map(i => i.entityUrn?.substring(0, 80));
+                        console.log(`  ⚠️  [${this._label}] No HERO card found. Card URNs: ${JSON.stringify(cardUrns)}`);
+                        fs.writeFileSync('/tmp/linkedin-all-cards.json',
+                            JSON.stringify(included.filter(i => i.$type?.endsWith('.Card')), null, 2));
+                    }
+                    console.log(`  🗂️  [${this._label}] Full response → /tmp/linkedin-full-response.json`);
+                } catch (e) { /* ignore */ }
+
                 for (const item of included) {
                     const count = this._extractFollowerCountFromText(item);
                     if (count > 0) {
