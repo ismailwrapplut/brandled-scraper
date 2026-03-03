@@ -364,12 +364,10 @@ export class LinkedInApiClient {
         if (!profileUrn) return; // need the URN to call this endpoint
         console.log(`  🔍 [${this._label}] Fetching follower count via GraphQL profile cards...`);
 
-        const variables = encodeURIComponent(
-            `(profileUrn:${profileUrn},sectionType:HERO)`
-        );
+        const encodedUrn = encodeURIComponent(profileUrn);
         const url =
             `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
-            `&variables=${variables}` +
+            `&variables=(profileUrn:${encodedUrn},sectionType:HERO)` +
             `&queryId=voyagerIdentityDashProfileCards.d96bceb7c9c096c42442379b2e37486a`;
 
         const resp = await this._apiGet(url);
