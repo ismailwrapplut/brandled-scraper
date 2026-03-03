@@ -711,7 +711,7 @@ export class LinkedInApiClient {
                         postedAt,
                         authorName: item.actor?.name?.text || profileSlug,
                         type: postType,
-                        media: null,
+                        media: this._extractLinkedInMedia(content),
                     });
                 } catch { continue; }
             }
@@ -719,6 +719,97 @@ export class LinkedInApiClient {
             console.log(`  ⚠️ [${this._label}] Parse error: ${err.message}`);
         }
         return posts;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  Media extraction
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Extract media URLs from a LinkedIn post content object.
+     * Returns an array of { type, url, preview } or null if no media.
+     */
+    _extractLinkedInMedia(content) {
+        if (!content) return null;
+        const media = [];
+
+        try {
+            // ── Images ────────────────────────────────────────────────
+            const imgComponent = content.imageComponent;
+            if (imgComponent) {
+                const images = imgComponent.images || [imgComponent.image].filter(Boolean);
+                for (const img of images) {
+                    // vectorImage or digitalMediaAsset
+                    const artifacts = img?.attributes?.[0]?.vectorImage?.artifacts
+                        || img?.attributes?.[0]?.digitalMediaAsset?.artifacts
+                        || img?.artifacts
+                        || [];
+                    const rootUrl = img?.attributes?.[0]?.vectorImage?.rootUrl
+                        || img?.attributes?.[0]?.digitalMediaAsset?.rootUrl
+                        || img?.rootUrl
+                        || '';
+
+                    if (artifacts.length > 0) {
+                        // Pick the highest-resolution artifact
+                        const best = artifacts.reduce((a, b) =>
+                            (b.width || 0) > (a.width || 0) ? b : a
+                        );
+                        const seg = best.fileIdentifyingUrlPathSegment || '';
+                        const url = seg.startsWith('http') ? seg : `${rootUrl}${seg}`;
+                        if (url) media.push({ type: 'image', url, preview: url });
+                    } else {
+                        // Fallback: direct URL on the image object
+                        const url = img?.url || img?.src || '';
+                        if (url) media.push({ type: 'image', url, preview: url });
+                    }
+                }
+            }
+
+            // ── Video ─────────────────────────────────────────────────
+            const videoComponent = content.videoComponent;
+            if (videoComponent) {
+                const video = videoComponent.component?.videoPlayMetadata
+                    || videoComponent.videoPlayMetadata
+                    || videoComponent;
+                // Try to find the highest-bitrate progressive stream
+                const streams = video?.progressiveStreams || video?.adaptiveStreams || [];
+                const best = streams.sort((a, b) =>
+                    (b.size || b.bitRate || 0) - (a.size || a.bitRate || 0)
+                )[0];
+                const url = best?.streamingLocations?.[0]?.url || best?.url
+                    || video?.primarySrc || videoComponent?.video?.url || '';
+                const preview = video?.thumbnail?.rootUrl
+                    || video?.coverImage?.url
+                    || '';
+                if (url) media.push({ type: 'video', url, preview });
+            }
+
+            // ── Document / Carousel ───────────────────────────────────
+            const docComponent = content.documentComponent;
+            if (docComponent) {
+                const doc = docComponent.document || docComponent;
+                const url = doc?.transcribedDocumentUrl || doc?.url
+                    || doc?.downloadUrl || '';
+                const preview = doc?.coverPageImageStorageKey
+                    ? `https://media.licdn.com/dms/image/${doc.coverPageImageStorageKey}`
+                    : doc?.coverImage?.url || '';
+                if (url || preview) {
+                    media.push({ type: 'document', url: url || preview, preview: preview || url });
+                }
+            }
+
+            // ── Article ───────────────────────────────────────────────
+            const articleComponent = content.articleComponent;
+            if (articleComponent) {
+                const url = articleComponent.navigationContext?.actionTarget
+                    || articleComponent.url || '';
+                const preview = articleComponent.largeImage?.attributes?.[0]?.vectorImage?.rootUrl
+                    || articleComponent.thumbnail?.url || '';
+                if (url) media.push({ type: 'article', url, preview });
+            }
+        } catch { /* skip malformed media */ }
+
+        return media.length > 0 ? media : null;
     }
 
     // ═══════════════════════════════════════════════════════════════════
