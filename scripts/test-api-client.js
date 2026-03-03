@@ -88,11 +88,12 @@ for (let attempt = 0; attempt < pool.size; attempt++) {
             const type = p.type !== 'text' ? ` [${p.type}]` : '';
             console.log(`\n  [${i + 1}] ${date}${type}`);
             console.log(`  👍 ${p.totalReactions}  💬 ${p.commentCount}  🔁 ${p.repostCount}`);
-            console.log(`  "${preview}${preview.length >= 88 ? '…' : '"}"`);
-                });
+            const suffix = preview.length >= 88 ? '…' : '"';
+            console.log(`  "${preview}${suffix}`);
+        });
 
         if (posts.length > previewCount) {
-            console.log(`\n  … and ${ posts.length - previewCount } more posts`);
+            console.log(`\n  … and ${posts.length - previewCount} more posts`);
         }
 
         // Stats breakdown
@@ -101,18 +102,18 @@ for (let attempt = 0; attempt < pool.size; attempt++) {
             return acc;
         }, {});
         const oldest = posts.at(-1)?.postedAt ? new Date(posts.at(-1).postedAt).toLocaleDateString('en-GB') : '?';
-        const newest = posts[0]?.postedAt     ? new Date(posts[0].postedAt).toLocaleDateString('en-GB')     : '?';
+        const newest = posts[0]?.postedAt ? new Date(posts[0].postedAt).toLocaleDateString('en-GB') : '?';
         console.log('\n' + '─'.repeat(62));
         console.log('  📊 STATS');
-        console.log(`  Date range : ${ oldest } → ${ newest }`);
-        console.log(`  By type    : ${ Object.entries(byType).map(([t, c]) => `${t}:${c}`).join(', ') }`);
+        console.log(`  Date range : ${oldest} → ${newest}`);
+        console.log(`  By type    : ${Object.entries(byType).map(([t, c]) => `${t}:${c}`).join(', ')}`);
         console.log(`  Avg 👍     : ${(posts.reduce((s, p) => s + p.totalReactions, 0) / posts.length).toFixed(1)}`);
         console.log(`  Avg 💬     : ${(posts.reduce((s, p) => s + p.commentCount, 0) / posts.length).toFixed(1)}`);
 
         success = true;
         break;
     } catch (err) {
-        console.log(`  ❌ Error: ${ err.message } \n`);
+        console.log(`  ❌ Error: ${err.message} \n`);
         pool.markFailed(pair.label, err.message);
     } finally {
         client.cleanup();
