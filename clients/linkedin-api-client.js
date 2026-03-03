@@ -708,7 +708,7 @@ export class LinkedInApiClient {
                         totalReactions: counts.numLikes || 0,
                         commentCount: counts.numComments || 0,
                         repostCount: counts.numShares || 0,
-                        impressions: item.insightsResolutionResults?.[0]?.numImpressions || 0,
+                        impressions: counts.numImpressions || 0,
                         postedAt,
                         authorName: item.actor?.name?.text || profileSlug,
                         type: postType,
