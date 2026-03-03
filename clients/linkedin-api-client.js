@@ -344,9 +344,16 @@ export class LinkedInApiClient {
             }
 
             // ── Text-based follower count extraction ──────────────────────────
-            // LinkedIn embeds the follower count as formatted text inside the Card's
-            // nested component tree (e.g. subtitle "1,234 followers" or "5K followers").
             if (profile.followersCount === 0) {
+                // Dump first Card entity to /tmp for diagnosis
+                const cardEntity = included.find(i => i.$type?.endsWith('.Card'));
+                if (cardEntity) {
+                    try {
+                        const fs = await import('fs');
+                        fs.writeFileSync('/tmp/linkedin-card-debug.json', JSON.stringify(cardEntity, null, 2));
+                        console.log(`  🗂️  [${this._label}] Card dumped → /tmp/linkedin-card-debug.json`);
+                    } catch { /* ignore fs errors */ }
+                }
                 for (const item of included) {
                     const count = this._extractFollowerCountFromText(item);
                     if (count > 0) {
@@ -378,8 +385,8 @@ export class LinkedInApiClient {
     _extractFollowerCountFromText(obj, depth = 0) {
         if (depth > 20 || obj === null || obj === undefined) return 0;
         if (typeof obj === 'string') {
-            // Match: optional number + optional decimal + optional K/M/B + " follower"
-            const m = obj.match(/^([\d,]+(?:\.\d+)?)\s*([KMBkmb])?\s*follower/i);
+            // no ^ anchor — match anywhere in the string, e.g. "5.4K followers • 500 connections"
+            const m = obj.match(/([\d,.]+)\s*([KMBkmb])?\s*follower/i);
             if (m) {
                 let n = parseFloat(m[1].replace(/,/g, ''));
                 const suffix = (m[2] || '').toUpperCase();
