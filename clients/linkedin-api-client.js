@@ -247,11 +247,18 @@ export class LinkedInApiClient {
     async _fetchProfileAndUrn(profileSlug) {
         console.log(`  👤 [${this._label}] Fetching profile: ${profileSlug}`);
 
-        // Decoration that returns name, headline, photo, networkInfo (followers)
+        // ── Correct GraphQL endpoint: returns Profile + FollowingState inline ──
+        // queryId discovered by inspecting LinkedIn's browser network requests.
+        // variables=(vanityName:{slug}) — vanityName = the public profile identifier.
+        // The included[] array contains:
+        //   • com.linkedin.voyager.dash.identity.profile.Profile  (name, headline, photo)
+        //   • com.linkedin.voyager.dash.feed.FollowingState        (followerCount ✓)
+        //   • com.linkedin.voyager.dash.feed.Hashtag               (creator hashtags)
+        //   • … and other injected entities
         const resp = await this._apiGet(
-            `https://www.linkedin.com/voyager/api/identity/dash/profiles` +
-            `?q=memberIdentity&memberIdentity=${encodeURIComponent(profileSlug)}` +
-            `&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-18`
+            `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
+            `&variables=(vanityName:${profileSlug})` +
+            `&queryId=voyagerIdentityDashProfiles.a3de77c32c473719f1c58fae6bff43a5`
         );
 
         let profile = {
@@ -275,15 +282,22 @@ export class LinkedInApiClient {
         const included = resp.data?.included || [];
 
         try {
-            // Extract URN from *elements
-            const elements = resp.data?.data?.['*elements'] || [];
+            // Profile URN from the GraphQL elements list
+            const elements =
+                resp.data?.data?.data?.identityDashProfilesByMemberIdentity?.['*elements'] ||
+                resp.data?.data?.identityDashProfilesByMemberIdentity?.['*elements'] ||
+                resp.data?.data?.['*elements'] || [];
             if (elements.length > 0) profileUrn = elements[0];
 
-            // Find profile entity
+            // Find THIS profile's entity (ignore viewer's own profile entity)
             const profileEntity = included.find(i =>
                 (i.$type === 'com.linkedin.voyager.dash.identity.profile.Profile' ||
-                    i.$type?.includes('.Profile')) &&
-                (i.publicIdentifier === profileSlug || i.firstName)
+                    i.$type?.endsWith('.Profile')) &&
+                i.publicIdentifier === profileSlug
+            ) || included.find(i =>
+                (i.$type === 'com.linkedin.voyager.dash.identity.profile.Profile' ||
+                    i.$type?.endsWith('.Profile')) &&
+                i.firstName  // fallback — any profile entity
             );
 
             if (profileEntity) {
@@ -294,27 +308,26 @@ export class LinkedInApiClient {
                 profile.name = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profileSlug;
                 profile.headline = profileEntity.headline || profileEntity.occupation || '';
 
-                // Profile image — walk the nested structure
+                // ── Connections count from injection paging total ──────────────
+                const connTotal = profileEntity.connections?.paging?.total;
+                if (connTotal > 0) profile.connectionsCount = connTotal;
+
+                // ── Profile image ──────────────────────────────────────────────
                 const photoRef = profileEntity.profilePicture
                     || profileEntity.photo
                     || profileEntity.image;
 
                 if (photoRef) {
-                    const artifacts =
-                        photoRef?.displayImageReference?.vectorImage?.artifacts ||
-                        photoRef?.displayImageWithFrameReference?.artifacts ||
-                        photoRef?.croppedImage?.artifacts ||
-                        photoRef?.artifacts;
+                    const vectorImg =
+                        photoRef?.displayImageReference?.vectorImage ||
+                        photoRef?.displayImageWithFrameReference ||
+                        (photoRef?.displayImageReference?.url ? null : null) ||
+                        photoRef;
 
-                    const rootUrl =
-                        photoRef?.displayImageReference?.vectorImage?.rootUrl ||
-                        photoRef?.displayImageWithFrameReference?.rootUrl ||
-                        photoRef?.croppedImage?.rootUrl ||
-                        photoRef?.rootUrl ||
-                        '';
+                    const artifacts = vectorImg?.artifacts || photoRef?.artifacts;
+                    const rootUrl = vectorImg?.rootUrl || photoRef?.rootUrl || '';
 
                     if (Array.isArray(artifacts) && artifacts.length > 0) {
-                        // Pick the highest resolution artifact
                         const best = artifacts.reduce((a, b) =>
                             (b.width || 0) > (a.width || 0) ? b : a
                         );
@@ -324,63 +337,33 @@ export class LinkedInApiClient {
                             : `${rootUrl}${segment}`;
                     }
                 }
-            }
 
-            // Log all $types from the initial fetch so we know exactly what's here
-            const initTypes = [...new Set(included.map(i => i.$type).filter(Boolean))];
-            console.log(`  🔬 [${this._label}] Initial included $types: ${initTypes.join(', ')}`);
-
-            // Scan ALL included items for follower/connection counts
-            for (const item of included) {
-                if (item.followersCount > 0) profile.followersCount = item.followersCount;
-                if (item.followerCount > 0) profile.followersCount = item.followerCount;
-                if (item.followeeCount > 0) profile.followingCount = item.followeeCount;
-                if (item.connectionsCount > 0) profile.connectionsCount = item.connectionsCount;
-                if (item.connectionCount > 0) profile.connectionsCount = item.connectionCount;
-            }
-
-            if (profileUrn) {
-                console.log(`  ✅ [${this._label}] Profile: ${profile.name} | ${profile.headline?.substring(0, 60)} | 👥 ${profile.followersCount} followers`);
-            }
-
-            // ── Text-based follower count extraction ──────────────────────────
-            if (profile.followersCount === 0) {
-                // DEBUG: dump the FULL raw response so we can grep for "follower"
-                try {
-                    const fs = await import('fs');
-                    fs.writeFileSync('/tmp/linkedin-full-response.json', JSON.stringify(resp.data, null, 2));
-                    // Also specifically find the HERO card
-                    const heroCard = included.find(i =>
-                        i.$type?.endsWith('.Card') && i.entityUrn?.includes('HERO')
-                    );
-                    if (heroCard) {
-                        fs.writeFileSync('/tmp/linkedin-hero-card.json', JSON.stringify(heroCard, null, 2));
-                        console.log(`  🗂️  [${this._label}] HERO card dumped → /tmp/linkedin-hero-card.json`);
-                    } else {
-                        const cardUrns = included
-                            .filter(i => i.$type?.endsWith('.Card'))
-                            .map(i => i.entityUrn?.substring(0, 80));
-                        console.log(`  ⚠️  [${this._label}] No HERO card found. Card URNs: ${JSON.stringify(cardUrns)}`);
-                        fs.writeFileSync('/tmp/linkedin-all-cards.json',
-                            JSON.stringify(included.filter(i => i.$type?.endsWith('.Card')), null, 2));
+                // ── Follower count: find FollowingState for THIS profile ───────
+                // The Profile entity has `*followingState` = URN string reference.
+                // The resolved FollowingState entity is in included[] with followerCount.
+                const fsUrn = profileEntity['*followingState'] || profileEntity.followingStateUrn;
+                if (fsUrn) {
+                    const fsEntity = included.find(i => i.entityUrn === fsUrn);
+                    if (fsEntity?.followerCount > 0) {
+                        profile.followersCount = fsEntity.followerCount;
                     }
-                    console.log(`  🗂️  [${this._label}] Full response → /tmp/linkedin-full-response.json`);
-                } catch (e) { /* ignore */ }
+                }
 
-                for (const item of included) {
-                    const count = this._extractFollowerCountFromText(item);
-                    if (count > 0) {
-                        profile.followersCount = count;
-                        console.log(`  📊 [${this._label}] Text scan → ${count} followers`);
-                        break;
+                // Broad fallback — scan all included for any FollowingState with
+                // an entityUrn matching this profile's URN
+                if (profile.followersCount === 0 && profileUrn) {
+                    const fsEntity = included.find(i =>
+                        (i.$type === 'com.linkedin.voyager.dash.feed.FollowingState' ||
+                            i.$type?.endsWith('.FollowingState')) &&
+                        i.entityUrn?.includes(profileUrn.split(':').pop())
+                    );
+                    if (fsEntity?.followerCount > 0) {
+                        profile.followersCount = fsEntity.followerCount;
                     }
                 }
             }
 
-            // If still 0, try supplemental endpoints
-            if (profile.followersCount === 0) {
-                await this._enrichFollowerCount(profileSlug, profile, profileUrn);
-            }
+            console.log(`  ✅ [${this._label}] Profile: ${profile.name} | ${profile.headline?.substring(0, 60)} | 👥 ${profile.followersCount} followers`);
 
         } catch (err) {
             console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
@@ -390,6 +373,7 @@ export class LinkedInApiClient {
         return { profile, profileUrn };
     }
 
+
     /**
      * Recursively walk any JSON object/array looking for strings that contain
      * a follower count, e.g. "1,234 followers" / "5K followers" / "2.3M followers".
@@ -398,7 +382,7 @@ export class LinkedInApiClient {
     _extractFollowerCountFromText(obj, depth = 0) {
         if (depth > 20 || obj === null || obj === undefined) return 0;
         if (typeof obj === 'string') {
-            // no ^ anchor — match anywhere in the string, e.g. "5.4K followers • 500 connections"
+            // no ^ anchor — match anywhere in the string
             const m = obj.match(/([\d,.]+)\s*([KMBkmb])?\s*follower/i);
             if (m) {
                 let n = parseFloat(m[1].replace(/,/g, ''));
