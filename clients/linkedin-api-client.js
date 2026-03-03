@@ -347,13 +347,65 @@ export class LinkedInApiClient {
             console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
         }
 
-        // If follower count still 0, try the real LinkedIn GraphQL profile cards endpoint
+
+        // ── Text-based follower count extraction ────────────────────────────
+        // LinkedIn embeds the follower count as formatted text inside the Card's
+        // nested component tree (e.g. subtitle "1,234 followers" or "5K followers").
+        // FollowingState is NOT returned as a separate included entity.
+        if (profile.followersCount === 0) {
+            for (const item of included) {
+                const count = this._extractFollowerCountFromText(item);
+                if (count > 0) {
+                    profile.followersCount = count;
+                    console.log(`  📊 [${this._label}] Text scan → ${count} followers`);
+                    break;
+                }
+            }
+        }
+
+        // If still 0, try supplemental endpoints
         if (profile.followersCount === 0) {
             await this._enrichFollowerCount(profileSlug, profile, profileUrn);
         }
 
         console.log(`  ✅ [${this._label}] Profile ready: ${profile.name} | 👥 ${profile.followersCount} followers`);
         return { profile, profileUrn };
+    }
+
+    /**
+     * Recursively walk any JSON object/array looking for strings that contain
+     * a follower count, e.g. "1,234 followers" / "5K followers" / "2.3M followers".
+     * Returns the parsed integer, or 0 if not found.
+     */
+    _extractFollowerCountFromText(obj, depth = 0) {
+        if (depth > 20 || obj === null || obj === undefined) return 0;
+        if (typeof obj === 'string') {
+            // Match: optional number + optional decimal + optional K/M/B + " follower"
+            const m = obj.match(/^([\d,]+(?:\.\d+)?)\s*([KMBkmb])?\s*follower/i);
+            if (m) {
+                let n = parseFloat(m[1].replace(/,/g, ''));
+                const suffix = (m[2] || '').toUpperCase();
+                if (suffix === 'K') n = Math.round(n * 1_000);
+                else if (suffix === 'M') n = Math.round(n * 1_000_000);
+                else if (suffix === 'B') n = Math.round(n * 1_000_000_000);
+                return Math.round(n);
+            }
+            return 0;
+        }
+        if (Array.isArray(obj)) {
+            for (const el of obj) {
+                const r = this._extractFollowerCountFromText(el, depth + 1);
+                if (r > 0) return r;
+            }
+            return 0;
+        }
+        if (typeof obj === 'object') {
+            for (const val of Object.values(obj)) {
+                const r = this._extractFollowerCountFromText(val, depth + 1);
+                if (r > 0) return r;
+            }
+        }
+        return 0;
     }
 
     /**
