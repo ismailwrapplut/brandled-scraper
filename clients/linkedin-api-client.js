@@ -435,7 +435,7 @@ export class LinkedInApiClient {
         if (!profileUrn) return;
 
         // ── Strategy 1: profile cards with several section types ──────────
-        for (const sectionType of ['HIGHLIGHTS', 'HERO', 'ABOUT', 'FEATURED']) {
+        for (const sectionType of ['TOP_CARD', 'HIGHLIGHTS', 'HERO', 'ABOUT', 'FEATURED', 'PROFILE_INTRO']) {
             const found = await this._tryProfileCardsSection(profileUrn, sectionType, profile);
             if (found) return;
         }
@@ -489,38 +489,49 @@ export class LinkedInApiClient {
     }
 
     async _tryFollowingStateEndpoint(profileUrn, profile) {
-        // LinkedIn's internal following state endpoint:
-        // GET /voyager/api/feed/dash/followingStates?q=followees&followerUrn={profileUrn}
-        // The response includes { followerCount, following } for the given member.
+        // The FollowingState entity for a profile carries followerCount (total followers).
+        // followeeUrn = the entity being followed (i.e. the profile we're scraping)
         const encodedUrn = encodeURIComponent(profileUrn);
-        const url = `https://www.linkedin.com/voyager/api/feed/dash/followingStates` +
-            `?q=followees&followerUrn=${encodedUrn}&count=1`;
 
-        console.log(`  🔍 [${this._label}] Trying /feed/dash/followingStates...`);
-        const resp = await this._apiGet(url);
-        if (!resp.ok || !resp.data) {
-            console.log(`  ⚠️ [${this._label}] followingStates endpoint: ${resp.status}`);
-            return;
-        }
+        // Attempt A: collection q=followees with followeeUrn
+        const urlA = `https://www.linkedin.com/voyager/api/feed/dash/followingStates` +
+            `?q=followees&followeeUrn=${encodedUrn}&count=1`;
 
-        const included = resp.data?.included || [];
-        const elements = resp.data?.elements || [];
-        const types = [...new Set([...included, ...elements].map(i => i.$type).filter(Boolean))];
-        if (types.length) console.log(`  🔬 [${this._label}] followingStates $types: ${types.join(', ')}`);
+        // Attempt B: REST entity-style fetch (resolves single FollowingState by key)
+        const urlB = `https://www.linkedin.com/voyager/api/feed/dash/followingStates` +
+            `/(followeeUrn:${encodedUrn})`;
 
-        for (const item of [...included, ...elements]) {
-            if (item.followerCount !== undefined && item.followerCount > 0) {
-                profile.followersCount = item.followerCount;
-                console.log(`  📊 [${this._label}] followingStates → ${profile.followersCount} followers`);
-                return;
+        for (const [label, url] of [['followingStates (A)', urlA], ['followingStates (B)', urlB]]) {
+            console.log(`  🔍 [${this._label}] Trying ${label}...`);
+            const resp = await this._apiGet(url);
+            if (!resp.ok || !resp.data) {
+                console.log(`  ⚠️ [${this._label}] ${label}: ${resp.status}`);
+                continue;
             }
-            if (item.followersCount !== undefined && item.followersCount > 0) {
-                profile.followersCount = item.followersCount;
-                console.log(`  📊 [${this._label}] followingStates → ${profile.followersCount} followers`);
-                return;
+
+            const items = [
+                ...(resp.data?.included || []),
+                ...(resp.data?.elements || []),
+                resp.data,           // top-level might have followerCount directly
+            ];
+            const types = [...new Set(items.map(i => i?.$type).filter(Boolean))];
+            if (types.length) console.log(`  🔬 [${this._label}] ${label} $types: ${types.join(', ')}`);
+
+            for (const item of items) {
+                if (!item) continue;
+                if (item.followerCount > 0) {
+                    profile.followersCount = item.followerCount;
+                    console.log(`  📊 [${this._label}] ${label} → ${profile.followersCount} followers`);
+                    return;
+                }
+                if (item.followersCount > 0) {
+                    profile.followersCount = item.followersCount;
+                    console.log(`  📊 [${this._label}] ${label} → ${profile.followersCount} followers`);
+                    return;
+                }
             }
+            console.log(`  ⚠️ [${this._label}] ${label}: no follower count`);
         }
-        console.log(`  ⚠️ [${this._label}] followingStates: no follower count found`);
     }
 
     // Public alias for profile-only fetches
