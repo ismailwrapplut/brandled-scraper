@@ -343,9 +343,9 @@ export class LinkedInApiClient {
             console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
         }
 
-        // If follower count still 0, try a supplementary decoration that includes networkInfo
+        // If follower count still 0, try the real LinkedIn GraphQL profile cards endpoint
         if (profile.followersCount === 0) {
-            await this._enrichFollowerCount(profileSlug, profile);
+            await this._enrichFollowerCount(profileSlug, profile, profileUrn);
         }
 
         console.log(`  ✅ [${this._label}] Profile ready: ${profile.name} | 👥 ${profile.followersCount} followers`);
@@ -353,34 +353,51 @@ export class LinkedInApiClient {
     }
 
     /**
-     * Fallback follower count via supplementary decoration.
-     * NOTE: /voyager/api/identity/profiles/{slug}/networkinfo is 410 gone.
+     * Fetch follower count via the exact GraphQL endpoint LinkedIn uses.
+     * The HERO section card returns a FollowingState entity in `included`
+     * which has `followerCount` on it.
+     *
+     * queryId: voyagerIdentityDashProfileCards.d96bceb7c9c096c42442379b2e37486a
+     * sectionType: HERO
      */
-    async _enrichFollowerCount(profileSlug, profile) {
-        // ProfileTopCardSupplementary decoration includes networkInfo baked in
-        const resp = await this._apiGet(
-            `https://www.linkedin.com/voyager/api/identity/dash/profiles` +
-            `?q=memberIdentity&memberIdentity=${encodeURIComponent(profileSlug)}` +
-            `&decorationId=com.linkedin.voyager.dash.deco.identity.profile.ProfileTopCardSupplementary-1`
+    async _enrichFollowerCount(profileSlug, profile, profileUrn) {
+        if (!profileUrn) return; // need the URN to call this endpoint
+        console.log(`  🔍 [${this._label}] Fetching follower count via GraphQL profile cards...`);
+
+        const variables = encodeURIComponent(
+            `(profileUrn:${profileUrn},sectionType:HERO)`
         );
+        const url =
+            `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
+            `&variables=${variables}` +
+            `&queryId=voyagerIdentityDashProfileCards.d96bceb7c9c096c42442379b2e37486a`;
+
+        const resp = await this._apiGet(url);
         if (!resp.ok || !resp.data) return;
 
         try {
             const included = resp.data?.included || [];
             for (const item of included) {
-                if (item.followersCount > 0) profile.followersCount = item.followersCount;
+                // FollowingState entity — type: com.linkedin.voyager.dash.feed.FollowingState
+                // has followerCount (how many people follow this member)
+                if (item.$type === 'com.linkedin.voyager.dash.feed.FollowingState' &&
+                    item.followerCount !== undefined) {
+                    profile.followersCount = item.followerCount || 0;
+                    console.log(`  📊 [${this._label}] FollowingState: ${profile.followersCount} followers`);
+                    return; // found it, done
+                }
+                // Also check all items broadly
                 if (item.followerCount > 0) profile.followersCount = item.followerCount;
-                if (item.connectionsCount > 0) profile.connectionsCount = item.connectionsCount;
+                if (item.followersCount > 0) profile.followersCount = item.followersCount;
             }
-            // Also check top-level data nodes
-            const data = resp.data?.data?.data || resp.data?.data || {};
-            if (data.followersCount > 0) profile.followersCount = data.followersCount;
-            if (data.followerCount > 0) profile.followersCount = data.followerCount;
-
             if (profile.followersCount > 0) {
-                console.log(`  📊 [${this._label}] Supplementary: ${profile.followersCount} followers`);
+                console.log(`  📊 [${this._label}] Followers: ${profile.followersCount}`);
+            } else {
+                console.log(`  ⚠️ [${this._label}] Follower count not found — profile may hide it`);
             }
-        } catch { /* swallow */ }
+        } catch (err) {
+            console.log(`  ⚠️ [${this._label}] Follower parse error: ${err.message}`);
+        }
     }
 
     // Public alias for profile-only fetches
