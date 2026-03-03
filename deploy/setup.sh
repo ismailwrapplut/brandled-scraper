@@ -64,10 +64,13 @@ PINECONE_API_KEY=
 PINECONE_INDEX_NAME=brandled-knowledge
 
 # === X/Twitter ===
+# Legacy browser-based scraper credentials (no longer needed with x-api-client)
 TWITTER_SCRAPER_USERNAME=
 TWITTER_SCRAPER_PASSWORD=
 TWITTER_SCRAPER_EMAIL=
+# Direct API credentials (get from x.com DevTools → Application → Cookies)
 TWITTER_AUTH_TOKEN=
+TWITTER_CT0=
 
 # === LinkedIn ===
 LINKEDIN_LI_AT_COOKIE=
