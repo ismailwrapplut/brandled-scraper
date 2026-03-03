@@ -45,11 +45,17 @@ const GQL_QUERY_IDS = {
     UserTweets: 'rO1eqEVXEJOZkbKmVFg5IQ',
 };
 
-const MIN_REQUEST_GAP_MS = 500;
-const RATE_LIMIT_BASE_MS = 60_000;   // 60s first backoff
-const RATE_LIMIT_MAX_MS = 300_000;  // 5 min max
-const MAX_RETRIES = 5;
+const MIN_REQUEST_GAP_MS = 600;        // minimum ms between any two requests (with jitter)
+const TOKEN_BUCKET_MAX = 10;         // max burst requests
+const TOKEN_BUCKET_REFILL_MS = 8_000;      // refill 10 tokens every 8s ≈ 75 req/min safe zone
+const RATE_LIMIT_BASE_MS = 60_000;     // 60s base backoff on first 429
+const RATE_LIMIT_MAX_MS = 300_000;    // 5 min max backoff
+const MAX_429_RETRIES = 5;
 const FETCH_TIMEOUT_MS = 25_000;
+
+// Inter-creator delays — how long to pause between scraping different users
+const CREATOR_DELAY_NORMAL = [3_000, 7_000];   // [min, max] ms — normal mode
+const CREATOR_DELAY_THROTTLED = [15_000, 30_000];  // [min, max] ms — after a 429
 
 function sleep(ms) {
     return new Promise(r => setTimeout(r, ms));
@@ -67,15 +73,28 @@ export class XApiClient {
 
         this._agent = null;
         this._headers = null;
+
+        // Token bucket — prevents burst of requests that trigger rate limits
+        this._tokenBucket = TOKEN_BUCKET_MAX;
+        this._lastTokenRefill = Date.now();
         this._lastReqTime = 0;
 
-        // Rate-limit state
+        // Rate-limit backoff state
         this._rateLimitBackoff = RATE_LIMIT_BASE_MS;
         this._consecutiveRateLimits = 0;
         this._isThrottled = false;
 
         // Cache last fetched profile (avoids a second API round-trip)
         this._lastFetchedProfile = null;
+    }
+
+    /**
+     * Returns recommended delay (ms) to wait before scraping the NEXT creator.
+     * Call this between different handles to stay well under X's rate limits.
+     */
+    getCreatorDelay() {
+        const [min, max] = this._isThrottled ? CREATOR_DELAY_THROTTLED : CREATOR_DELAY_NORMAL;
+        return min + Math.random() * (max - min);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -236,6 +255,43 @@ export class XApiClient {
     //  Internal: HTTP + retries
     // ═══════════════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  Rate Limiting — Token Bucket
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Acquire a token before every request.
+     * Blocks until a token is available and the minimum request gap has elapsed.
+     */
+    async _acquireToken() {
+        // Refill bucket based on elapsed time
+        const now = Date.now();
+        const elapsed = now - this._lastTokenRefill;
+        if (elapsed >= TOKEN_BUCKET_REFILL_MS) {
+            const refills = Math.floor(elapsed / TOKEN_BUCKET_REFILL_MS);
+            this._tokenBucket = Math.min(TOKEN_BUCKET_MAX, this._tokenBucket + refills);
+            this._lastTokenRefill = now;
+        }
+
+        // If bucket is empty, wait for the next refill window
+        if (this._tokenBucket <= 0) {
+            const waitMs = TOKEN_BUCKET_REFILL_MS - (Date.now() - this._lastTokenRefill) + 100;
+            console.log(`  🪣 [x-api] Token bucket empty — waiting ${(waitMs / 1000).toFixed(1)}s before next request`);
+            await sleep(waitMs);
+            this._tokenBucket = TOKEN_BUCKET_MAX;
+            this._lastTokenRefill = Date.now();
+        }
+
+        // Enforce minimum gap between any two requests (with small jitter)
+        const gap = Date.now() - this._lastReqTime;
+        if (gap < MIN_REQUEST_GAP_MS) {
+            await sleep(MIN_REQUEST_GAP_MS - gap + Math.random() * 150);
+        }
+
+        this._tokenBucket--;
+        this._lastReqTime = Date.now();
+    }
+
     async _gqlRequest(operationName, variables, features, fieldToggles = null) {
         const queryId = GQL_QUERY_IDS[operationName];
         if (!queryId) throw new Error(`Unknown X operation: ${operationName}`);
@@ -248,12 +304,11 @@ export class XApiClient {
 
         const url = `https://x.com/i/api/graphql/${queryId}/${operationName}?${params.toString()}`;
 
-        // Enforce minimum gap between requests
-        const gap = Date.now() - this._lastReqTime;
-        if (gap < MIN_REQUEST_GAP_MS) await sleep(MIN_REQUEST_GAP_MS - gap);
+        let backoffMs = this._rateLimitBackoff;
 
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            this._lastReqTime = Date.now();
+        for (let attempt = 1; attempt <= MAX_429_RETRIES + 1; attempt++) {
+            // Acquire token (enforces bucket + min gap) before every attempt
+            await this._acquireToken();
 
             const fetchFn = (this._agent && _undiciFetch) ? _undiciFetch : fetch;
             const fetchOpts = {
@@ -267,7 +322,7 @@ export class XApiClient {
             try {
                 resp = await fetchFn(url, fetchOpts);
             } catch (err) {
-                if (attempt < MAX_RETRIES) {
+                if (attempt <= MAX_429_RETRIES) {
                     console.log(`  ⏳ [x-api] Network error on ${operationName}, retrying in 5s... (${err.message})`);
                     await sleep(5000);
                     continue;
@@ -275,6 +330,7 @@ export class XApiClient {
                 throw err;
             }
 
+            // ── Success ────────────────────────────────────────────────
             if (resp.ok) {
                 this._consecutiveRateLimits = 0;
                 this._rateLimitBackoff = RATE_LIMIT_BASE_MS;
@@ -282,27 +338,38 @@ export class XApiClient {
                 return resp.json();
             }
 
+            // ── Auth failure: cookie expired — don't retry ─────────────
+            if (resp.status === 401 || resp.status === 403) {
+                const body = await resp.text().catch(() => '');
+                throw new Error(`[x-api] Auth error ${resp.status} — TWITTER_AUTH_TOKEN or TWITTER_CT0 may be expired. Refresh cookies from x.com DevTools. (${body.substring(0, 120)})`);
+            }
+
+            // ── Rate limited ───────────────────────────────────────────
             if (resp.status === 429) {
                 this._consecutiveRateLimits++;
                 this._isThrottled = true;
 
-                const retryAfter = resp.headers.get('retry-after');
-                let waitMs = this._rateLimitBackoff;
-                if (retryAfter) {
-                    const secs = parseInt(retryAfter, 10);
-                    if (!isNaN(secs)) waitMs = secs * 1000;
-                }
-                waitMs = Math.min(waitMs, RATE_LIMIT_MAX_MS);
-                this._rateLimitBackoff = Math.min(this._rateLimitBackoff * 2, RATE_LIMIT_MAX_MS);
+                const serverWait = parseInt(resp.headers.get('retry-after') || '0', 10) * 1000;
+                const waitMs = Math.min(
+                    Math.max(serverWait, backoffMs) + Math.random() * 5000,
+                    RATE_LIMIT_MAX_MS
+                );
 
-                if (attempt < MAX_RETRIES) {
-                    console.log(`  ⏳ [x-api] Rate limited (429) on ${operationName}, waiting ${Math.round(waitMs / 1000)}s... (attempt ${attempt}/${MAX_RETRIES})`);
-                    await sleep(waitMs);
-                    continue;
+                if (attempt > MAX_429_RETRIES) {
+                    throw new Error(`[x-api] Rate limited on ${operationName} after ${MAX_429_RETRIES} retries. Try again later.`);
                 }
+
+                console.log(`  ⏳ [x-api] 429 Rate limited on ${operationName} (attempt ${attempt}/${MAX_429_RETRIES}) — backing off ${(waitMs / 1000).toFixed(0)}s...`);
+                await sleep(waitMs);
+                backoffMs = Math.min(backoffMs * 2, RATE_LIMIT_MAX_MS); // exponential
+                // Re-acquire token after the long wait
+                this._tokenBucket = TOKEN_BUCKET_MAX;
+                this._lastTokenRefill = Date.now();
+                continue;
             }
 
-            if (resp.status >= 500 && attempt < MAX_RETRIES) {
+            // ── Server error: retry with short delay ───────────────────
+            if (resp.status >= 500 && attempt <= MAX_429_RETRIES) {
                 console.log(`  ⏳ [x-api] Server error (${resp.status}) on ${operationName}, retrying in 5s...`);
                 await sleep(5000);
                 continue;
