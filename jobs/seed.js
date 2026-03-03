@@ -11,8 +11,8 @@
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { XClient } from "../clients/x-client.js";
-import { LinkedInClient } from "../clients/linkedin-client.js";
+import { XApiClient } from "../clients/x-api-client.js";
+import { LinkedInApiClient } from "../clients/linkedin-api-client.js";
 import { LinkedInAccountPool } from "../clients/linkedin-account-pool.js";
 import {
     normalizeXTweet,
@@ -96,12 +96,12 @@ export async function seedTopPosts(options = {}) {
     const byPlatform = { x: 0, linkedin: 0 };
 
     // ══════════════════════════════════════════════════════════════
-    //  X Creators — per-creator pipeline
+    //  X Creators — per-creator pipeline (pure API, no browser)
     // ══════════════════════════════════════════════════════════════
     if (creators.x.length > 0) {
-        console.log("\n🐦 Processing X/Twitter creators (scrape → classify → embed → upsert each)...");
-        let xClient = new XClient();
-        await xClient.initialize();
+        console.log("\n🐦 Processing X/Twitter creators (API mode — no browser)...");
+        const xClient = new XApiClient();
+        xClient.initialize();
 
         for (let i = 0; i < creators.x.length; i++) {
             const creator = creators.x[i];
@@ -113,9 +113,9 @@ export async function seedTopPosts(options = {}) {
             }
 
             try {
-                // SCRAPE
-                const profile = await xClient.fetchCreatorProfile(creator.handle);
+                // SCRAPE — profile is captured as a side-effect of fetchCreatorTweets
                 const tweets = await xClient.fetchCreatorTweets(creator.handle, maxTweetsPerCreator);
+                const profile = xClient._lastFetchedProfile || { username: creator.handle };
 
                 if (tweets.length === 0) {
                     failures.x.push({ handle: creator.handle, niche: creator.niche, reason: "0 tweets returned" });
@@ -162,15 +162,14 @@ export async function seedTopPosts(options = {}) {
                 console.error(`      ❌ Error: ${error.message}`);
                 failures.x.push({ handle: creator.handle, niche: creator.niche, reason: error.message });
 
-                if (error.message.includes("has been closed") || error.message.includes("Target closed") || error.message.includes("not initialized")) {
-                    console.log("      🔄 Browser crashed — reinitializing X client...");
-                    try { await xClient.cleanup(); } catch { }
-                    xClient = new XClient();
-                    await xClient.initialize();
+                // Auth expiry is fatal — cookies need to be refreshed, stop immediately
+                if (error.message.includes("Auth error") || error.message.includes("expired")) {
+                    console.error("      🛑 Auth token expired — update TWITTER_AUTH_TOKEN + TWITTER_CT0 in .env and re-run");
+                    break;
                 }
             }
 
-            // Adaptive delay between creators
+            // Adaptive inter-creator delay (3–7s normal, 15–30s when throttled)
             if (i < creators.x.length - 1) {
                 const delay = xClient.getCreatorDelay();
                 if (delay > 10000) {
@@ -180,7 +179,7 @@ export async function seedTopPosts(options = {}) {
             }
         }
 
-        await xClient.cleanup();
+        xClient.cleanup();
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -200,17 +199,13 @@ export async function seedTopPosts(options = {}) {
             const clientCache = new Map();
 
             /**
-             * Get or create a LinkedInClient for a given account pair.
+             * Get or create a LinkedInApiClient for a given account pair.
+             * These are stateless HTTP clients — no browser to crash, no warm-up needed.
              */
-            async function getOrCreateClient(pair) {
-                if (clientCache.has(pair.id)) {
-                    const cached = clientCache.get(pair.id);
-                    if (cached.browser) return cached;
-                    // Browser died — recreate
-                    clientCache.delete(pair.id);
-                }
-                const client = new LinkedInClient(pair);
-                await client.initialize();
+            function getOrCreateClient(pair) {
+                if (clientCache.has(pair.id)) return clientCache.get(pair.id);
+                const client = new LinkedInApiClient(pair);
+                client.initialize();
                 clientCache.set(pair.id, client);
                 return client;
             }
@@ -218,20 +213,19 @@ export async function seedTopPosts(options = {}) {
             /**
              * Attempt to scrape a LinkedIn creator using the pool with fallback.
              * Tries each healthy pair until one succeeds.
-             * @returns {{ posts: Array, pair: object } | null}
+             * @returns {{ profile: object, posts: Array, pair: object } | null}
              */
             async function scrapeWithPool(profileUrl, maxPosts) {
                 const healthyPairs = pool.allHealthy();
                 if (healthyPairs.length === 0) return null;
 
                 for (const pair of healthyPairs) {
-                    let client;
                     try {
-                        client = await getOrCreateClient(pair);
-                        const posts = await client.fetchCreatorPosts(profileUrl, maxPosts);
+                        const client = getOrCreateClient(pair);
+                        const { profile, posts } = await client.fetchCreatorFull(profileUrl, maxPosts);
 
                         pool.reportSuccess(pair);
-                        return { posts, pair };
+                        return { profile, posts, pair };
                     } catch (error) {
                         const msg = error.message || "";
                         console.log(`      ⚠️ [${pair.label}] failed: ${msg.substring(0, 100)}`);
@@ -240,15 +234,14 @@ export async function seedTopPosts(options = {}) {
                             msg.includes("login") ||
                             msg.includes("authwall") ||
                             msg.includes("cookie invalid") ||
-                            msg.includes("cookie expired");
+                            msg.includes("cookie expired") ||
+                            msg.includes("401") ||
+                            msg.includes("403");
 
                         pool.reportFailure(pair, msg, isFatal);
 
-                        // Destroy the client for this pair if it's a browser crash
-                        if (msg.includes("has been closed") || msg.includes("Target closed")) {
-                            try { await client?.cleanup(); } catch { }
-                            clientCache.delete(pair.id);
-                        }
+                        // Remove from cache so next call creates a fresh client
+                        if (isFatal) clientCache.delete(pair.id);
                     }
                 }
 
@@ -284,7 +277,7 @@ export async function seedTopPosts(options = {}) {
                         continue;
                     }
 
-                    const posts = result.posts;
+                    const { posts } = result;
 
                     // NORMALIZE
                     let normalized = posts.map((p) =>
@@ -331,9 +324,9 @@ export async function seedTopPosts(options = {}) {
                 }
             }
 
-            // Cleanup all cached clients
+            // Cleanup all cached clients (API clients are stateless — just nulls out agent)
             for (const [, client] of clientCache) {
-                try { await client.cleanup(); } catch { }
+                try { client.cleanup(); } catch { }
             }
 
             // Print pool health summary
