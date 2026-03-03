@@ -354,20 +354,22 @@ export class LinkedInApiClient {
 
     /**
      * Fetch follower count via the exact GraphQL endpoint LinkedIn uses.
-     * The HERO section card returns a FollowingState entity in `included`
-     * which has `followerCount` on it.
+     * The CONTENT_COLLECTIONS_DETAILS section returns FollowingState entities
+     * in `included` that carry `followerCount`.
+     *
+     * FollowingState hashed type: com.linkedin.18bcd573947ab8d26d15c385f0214d78
+     * (== com.linkedin.voyager.dash.feed.FollowingState)
      *
      * queryId: voyagerIdentityDashProfileCards.d96bceb7c9c096c42442379b2e37486a
-     * sectionType: HERO
      */
     async _enrichFollowerCount(profileSlug, profile, profileUrn) {
-        if (!profileUrn) return; // need the URN to call this endpoint
-        console.log(`  🔍 [${this._label}] Fetching follower count via GraphQL profile cards...`);
+        if (!profileUrn) return;
+        console.log(`  🔍 [${this._label}] Fetching follower count via profile cards (CONTENT_COLLECTIONS_DETAILS)...`);
 
         const encodedUrn = encodeURIComponent(profileUrn);
         const url =
             `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
-            `&variables=(profileUrn:${encodedUrn},sectionType:HERO)` +
+            `&variables=(profileUrn:${encodedUrn},sectionType:CONTENT_COLLECTIONS_DETAILS)` +
             `&queryId=voyagerIdentityDashProfileCards.d96bceb7c9c096c42442379b2e37486a`;
 
         const resp = await this._apiGet(url);
@@ -375,23 +377,41 @@ export class LinkedInApiClient {
 
         try {
             const included = resp.data?.included || [];
+
+            // Debug: log all $type values seen (helps diagnose if type string changes)
+            const types = [...new Set(included.map(i => i.$type).filter(Boolean))];
+            if (types.length) {
+                console.log(`  🔬 [${this._label}] included $types: ${types.slice(0, 8).join(', ')}`);
+            } else {
+                console.log(`  ⚠️ [${this._label}] included array is empty — follower count unavailable`);
+                return;
+            }
+
             for (const item of included) {
-                // FollowingState entity — type: com.linkedin.voyager.dash.feed.FollowingState
-                // has followerCount (how many people follow this member)
-                if (item.$type === 'com.linkedin.voyager.dash.feed.FollowingState' &&
-                    item.followerCount !== undefined) {
+                const t = item.$type || '';
+                // Match either the hashed form or the full display name
+                const isFollowingState =
+                    t === 'com.linkedin.18bcd573947ab8d26d15c385f0214d78' ||
+                    t === 'com.linkedin.voyager.dash.feed.FollowingState';
+
+                if (isFollowingState && item.followerCount !== undefined) {
                     profile.followersCount = item.followerCount || 0;
-                    console.log(`  📊 [${this._label}] FollowingState: ${profile.followersCount} followers`);
-                    return; // found it, done
+                    if (item.followeeCount !== undefined) {
+                        profile.followingCount = item.followeeCount || 0;
+                    }
+                    console.log(`  📊 [${this._label}] FollowingState → ${profile.followersCount} followers`);
+                    return;
                 }
-                // Also check all items broadly
+
+                // Broad fallback — pick up any entity that has followerCount
                 if (item.followerCount > 0) profile.followersCount = item.followerCount;
                 if (item.followersCount > 0) profile.followersCount = item.followersCount;
             }
+
             if (profile.followersCount > 0) {
-                console.log(`  📊 [${this._label}] Followers: ${profile.followersCount}`);
+                console.log(`  📊 [${this._label}] Followers (broad scan): ${profile.followersCount}`);
             } else {
-                console.log(`  ⚠️ [${this._label}] Follower count not found — profile may hide it`);
+                console.log(`  ⚠️ [${this._label}] Follower count not found in any included entity`);
             }
         } catch (err) {
             console.log(`  ⚠️ [${this._label}] Follower parse error: ${err.message}`);
