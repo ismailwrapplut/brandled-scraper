@@ -124,4 +124,4 @@ console.log('\n' + '═'.repeat(62));
 console.log(success ? '  🎉 Scrape complete!' : '  ❌ All accounts failed — refresh li_at cookies');
 console.log('═'.repeat(62) + '\n');
 
-pool.status();
+pool.printStatus();

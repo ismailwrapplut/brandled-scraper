@@ -326,25 +326,13 @@ export class LinkedInApiClient {
                 }
             }
 
-            // Follower / connection counts — look in networkInfo or followerCount entities
-            const networkInfo = included.find(i =>
-                i.$type?.includes('NetworkInfo') ||
-                i.$type?.includes('ProfileNetworkInfo') ||
-                (i.followersCount !== undefined)
-            );
-
-            if (networkInfo) {
-                profile.followersCount = networkInfo.followersCount || networkInfo.followerCount || 0;
-                profile.connectionsCount = networkInfo.connectionsCount || networkInfo.connectionCount || 0;
-            }
-
-            // Also try FollowingState for follower count
-            const followingState = included.find(i =>
-                i.$type === 'com.linkedin.voyager.dash.feed.FollowingState' &&
-                i.followerCount !== undefined
-            );
-            if (followingState && !profile.followersCount) {
-                profile.followersCount = followingState.followerCount || 0;
+            // Scan ALL included items for follower/connection counts
+            // LinkedIn returns these under several different $type keys
+            for (const item of included) {
+                if (item.followersCount > 0) profile.followersCount = item.followersCount;
+                if (item.followerCount > 0) profile.followersCount = item.followerCount;
+                if (item.connectionsCount > 0) profile.connectionsCount = item.connectionsCount;
+                if (item.connectionCount > 0) profile.connectionsCount = item.connectionCount;
             }
 
             if (profileUrn) {
@@ -355,26 +343,43 @@ export class LinkedInApiClient {
             console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
         }
 
-        // If follower count still 0, try dedicated networkinfo endpoint
-        if (profile.followersCount === 0 && profileUrn) {
+        // If follower count still 0, try a supplementary decoration that includes networkInfo
+        if (profile.followersCount === 0) {
             await this._enrichFollowerCount(profileSlug, profile);
         }
 
+        console.log(`  ✅ [${this._label}] Profile ready: ${profile.name} | 👥 ${profile.followersCount} followers`);
         return { profile, profileUrn };
     }
 
+    /**
+     * Fallback follower count via supplementary decoration.
+     * NOTE: /voyager/api/identity/profiles/{slug}/networkinfo is 410 gone.
+     */
     async _enrichFollowerCount(profileSlug, profile) {
+        // ProfileTopCardSupplementary decoration includes networkInfo baked in
         const resp = await this._apiGet(
-            `https://www.linkedin.com/voyager/api/identity/profiles/${profileSlug}/networkinfo`
+            `https://www.linkedin.com/voyager/api/identity/dash/profiles` +
+            `?q=memberIdentity&memberIdentity=${encodeURIComponent(profileSlug)}` +
+            `&decorationId=com.linkedin.voyager.dash.deco.identity.profile.ProfileTopCardSupplementary-1`
         );
         if (!resp.ok || !resp.data) return;
 
         try {
-            // REST response
-            const data = resp.data?.data || resp.data;
-            profile.followersCount = data?.followersCount || data?.followerCount || profile.followersCount;
-            profile.connectionsCount = data?.connectionsCount || data?.connectionCount || profile.connectionsCount;
-            console.log(`  📊 [${this._label}] Network info: ${profile.followersCount} followers, ${profile.connectionsCount} connections`);
+            const included = resp.data?.included || [];
+            for (const item of included) {
+                if (item.followersCount > 0) profile.followersCount = item.followersCount;
+                if (item.followerCount > 0) profile.followersCount = item.followerCount;
+                if (item.connectionsCount > 0) profile.connectionsCount = item.connectionsCount;
+            }
+            // Also check top-level data nodes
+            const data = resp.data?.data?.data || resp.data?.data || {};
+            if (data.followersCount > 0) profile.followersCount = data.followersCount;
+            if (data.followerCount > 0) profile.followersCount = data.followerCount;
+
+            if (profile.followersCount > 0) {
+                console.log(`  📊 [${this._label}] Supplementary: ${profile.followersCount} followers`);
+            }
         } catch { /* swallow */ }
     }
 
