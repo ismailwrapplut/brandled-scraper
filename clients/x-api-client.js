@@ -433,7 +433,8 @@ export class XApiClient {
                 };
             });
 
-            const viewCount = tweetData?.views?.count ? parseInt(tweetData.views.count, 10) : 0;
+            // On X, "views" = impressions — same metric, X just calls it "views" internally
+            const impressions = tweetData?.views?.count ? parseInt(tweetData.views.count, 10) : 0;
 
             return {
                 id: legacy.id_str || tweetData.rest_id,
@@ -445,7 +446,7 @@ export class XApiClient {
                 replies: legacy.reply_count || 0,
                 quotes: legacy.quote_count || 0,
                 bookmarkCount: legacy.bookmark_count || 0,
-                views: viewCount,
+                impressions,
                 conversationId: legacy.conversation_id_str || null,
                 inReplyToStatusId: legacy.in_reply_to_status_id_str || null,
                 isRetweet: false,
