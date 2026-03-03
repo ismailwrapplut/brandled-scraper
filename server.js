@@ -12,9 +12,9 @@
 
 import "dotenv/config";              // must be FIRST — loads .env before any other module reads process.env
 import express from "express";
-import { LinkedInClient } from "./clients/linkedin-client.js";
+import { LinkedInApiClient } from "./clients/linkedin-api-client.js";
 import { LinkedInAccountPool } from "./clients/linkedin-account-pool.js";
-import { XClient } from "./clients/x-client.js";
+import { XApiClient } from "./clients/x-api-client.js";
 import { seedTopPosts } from "./jobs/seed.js";
 
 const app = express();
@@ -61,12 +61,12 @@ app.post("/api/scrape/linkedin", authenticate, async (req, res) => {
 
     // Try each healthy account pair until one succeeds
     for (const pair of healthyPairs) {
-        const client = new LinkedInClient(pair);
+        const client = new LinkedInApiClient(pair);
         try {
             console.log(`[Scraper] Starting LinkedIn scrape for: ${username} [${pair.label}]`);
-            await client.initialize();
+            client.initialize();
 
-            const posts = await client.fetchCreatorPosts(profileUrl, maxPosts);
+            const { profile, posts } = await client.fetchCreatorFull(profileUrl, maxPosts);
 
             linkedInPool.reportSuccess(pair);
             console.log(`[Scraper] LinkedIn scrape complete: ${posts.length} posts for ${username} [${pair.label}]`);
@@ -77,13 +77,14 @@ app.post("/api/scrape/linkedin", authenticate, async (req, res) => {
                 username,
                 postsCount: posts.length,
                 posts,
+                profile,
                 _account: pair.label,
             });
         } catch (error) {
             console.error(`[Scraper] LinkedIn scrape error for ${username} [${pair.label}]:`, error.message);
             linkedInPool.reportFailure(pair, error.message);
         } finally {
-            await client.cleanup();
+            client.cleanup();
         }
     }
 
@@ -106,15 +107,15 @@ app.post("/api/scrape/x", authenticate, async (req, res) => {
         return res.status(400).json({ error: "handle is required" });
     }
 
-    const client = new XClient();
+    const client = new XApiClient();
 
     try {
         console.log(`[Scraper] Starting X scrape for: @${handle}`);
-        await client.initialize();
+        client.initialize();
 
-        // Fetch tweets FIRST so profile is captured during page visit
+        // Fetch tweets FIRST so profile is captured via GraphQL automatically
         const tweets = await client.fetchCreatorTweets(handle, maxTweets);
-        const profile = await client.fetchCreatorProfile(handle);
+        const profile = client._lastFetchedProfile || await client.fetchCreatorProfile(handle);
 
         console.log(`[Scraper] X scrape complete: ${tweets.length} tweets for @${handle}`);
 
@@ -133,7 +134,7 @@ app.post("/api/scrape/x", authenticate, async (req, res) => {
             message: error.message,
         });
     } finally {
-        await client.cleanup();
+        client.cleanup();
     }
 });
 
@@ -158,14 +159,12 @@ app.post("/api/scrape/both", authenticate, async (req, res) => {
 
         for (const pair of healthyPairs) {
             if (linkedinDone) break;
-            const liClient = new LinkedInClient(pair);
+            const liClient = new LinkedInApiClient(pair);
             try {
-                await liClient.initialize();
+                liClient.initialize();
                 const profileUrl = `https://www.linkedin.com/in/${linkedinUsername}`;
-                const [posts, profile] = await Promise.all([
-                    liClient.fetchCreatorPosts(profileUrl, maxPosts),
-                    liClient.fetchCreatorProfile(profileUrl),
-                ]);
+                const { profile, posts } = await liClient.fetchCreatorFull(profileUrl, maxPosts);
+
                 linkedInPool.reportSuccess(pair);
                 results.linkedin = {
                     success: true,
@@ -182,7 +181,7 @@ app.post("/api/scrape/both", authenticate, async (req, res) => {
                 results.linkedin = { success: false, error: error.message };
                 console.error(`[Scraper] LinkedIn error [${pair.label}]:`, error.message);
             } finally {
-                await liClient.cleanup();
+                liClient.cleanup();
             }
         }
 
@@ -193,14 +192,13 @@ app.post("/api/scrape/both", authenticate, async (req, res) => {
 
     // Scrape X if handle provided
     if (xHandle) {
-        const xClient = new XClient();
+        const xClient = new XApiClient();
         try {
-            await xClient.initialize();
-            // IMPORTANT: Fetch tweets FIRST so profile data (including image) is
-            // captured from the GraphQL interception during the page visit.
-            // Then fetchCreatorProfile will return the cached profile instantly.
+            xClient.initialize();
+
             const tweets = await xClient.fetchCreatorTweets(xHandle, maxPosts);
-            const profile = await xClient.fetchCreatorProfile(xHandle);
+            const profile = xClient._lastFetchedProfile || await xClient.fetchCreatorProfile(xHandle);
+
             results.x = {
                 success: true,
                 handle: xHandle,
@@ -213,7 +211,7 @@ app.post("/api/scrape/both", authenticate, async (req, res) => {
             results.x = { success: false, error: error.message };
             console.error(`[Scraper] X error:`, error.message);
         } finally {
-            await xClient.cleanup();
+            xClient.cleanup();
         }
     }
 
@@ -275,13 +273,13 @@ app.get("/api/seed/status", authenticate, (req, res) => {
 app.get("/api/debug/x", authenticate, async (req, res) => {
     const handle = req.query.handle || "justinwelsh";
     const client = new XClient();
-    
+
     try {
         await client.initialize();
-        
+
         // Get headers
         const headers = await client._getAPIHeaders();
-        
+
         // Resolve user
         let userResult;
         try {
@@ -309,11 +307,11 @@ app.get("/api/debug/x", authenticate, async (req, res) => {
         } catch (e) {
             return res.json({ error: "UserByScreenName failed", message: e.message });
         }
-        
+
         const userObj = userResult?.data?.user?.result;
         const userId = userObj?.rest_id;
         const legacy = userObj?.legacy || {};
-        
+
         // Fetch one page of tweets
         let timelineResult;
         try {
@@ -374,15 +372,15 @@ app.get("/api/debug/x", authenticate, async (req, res) => {
                 error: "UserTweets failed", message: e.message,
             });
         }
-        
+
         // Analyze the response
-        const instructions = timelineResult?.data?.user?.result?.timeline_v2?.timeline?.instructions || 
-                             timelineResult?.data?.user?.result?.timeline?.timeline?.instructions || [];
+        const instructions = timelineResult?.data?.user?.result?.timeline_v2?.timeline?.instructions ||
+            timelineResult?.data?.user?.result?.timeline?.timeline?.instructions || [];
         const entries = instructions.flatMap(i => i?.entries || []);
         const tweetEntries = entries.filter(e => e?.entryId?.startsWith("tweet-"));
         const resultKeys = Object.keys(timelineResult?.data?.user?.result || {});
         const typename = timelineResult?.data?.user?.result?.__typename;
-        
+
         res.json({
             user: {
                 id: userId,
@@ -401,7 +399,7 @@ app.get("/api/debug/x", authenticate, async (req, res) => {
                 tweetEntries: tweetEntries.length,
                 entryIds: entries.slice(0, 10).map(e => e?.entryId),
                 // Show first tweet text as proof
-                sampleTweet: tweetEntries[0] ? 
+                sampleTweet: tweetEntries[0] ?
                     (tweetEntries[0]?.content?.itemContent?.tweet_results?.result?.legacy?.full_text || "").slice(0, 200) : null,
             },
             // Raw response for deep debugging (truncated)
