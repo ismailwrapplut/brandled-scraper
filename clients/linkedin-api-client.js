@@ -272,9 +272,9 @@ export class LinkedInApiClient {
             return { profile, profileUrn };
         }
 
-        try {
-            const included = resp.data?.included || [];
+        const included = resp.data?.included || [];
 
+        try {
             // Extract URN from *elements
             const elements = resp.data?.data?.['*elements'] || [];
             if (elements.length > 0) profileUrn = elements[0];
@@ -343,29 +343,27 @@ export class LinkedInApiClient {
                 console.log(`  ✅ [${this._label}] Profile: ${profile.name} | ${profile.headline?.substring(0, 60)} | 👥 ${profile.followersCount} followers`);
             }
 
-        } catch (err) {
-            console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
-        }
-
-
-        // ── Text-based follower count extraction ────────────────────────────
-        // LinkedIn embeds the follower count as formatted text inside the Card's
-        // nested component tree (e.g. subtitle "1,234 followers" or "5K followers").
-        // FollowingState is NOT returned as a separate included entity.
-        if (profile.followersCount === 0) {
-            for (const item of included) {
-                const count = this._extractFollowerCountFromText(item);
-                if (count > 0) {
-                    profile.followersCount = count;
-                    console.log(`  📊 [${this._label}] Text scan → ${count} followers`);
-                    break;
+            // ── Text-based follower count extraction ──────────────────────────
+            // LinkedIn embeds the follower count as formatted text inside the Card's
+            // nested component tree (e.g. subtitle "1,234 followers" or "5K followers").
+            if (profile.followersCount === 0) {
+                for (const item of included) {
+                    const count = this._extractFollowerCountFromText(item);
+                    if (count > 0) {
+                        profile.followersCount = count;
+                        console.log(`  📊 [${this._label}] Text scan → ${count} followers`);
+                        break;
+                    }
                 }
             }
-        }
 
-        // If still 0, try supplemental endpoints
-        if (profile.followersCount === 0) {
-            await this._enrichFollowerCount(profileSlug, profile, profileUrn);
+            // If still 0, try supplemental endpoints
+            if (profile.followersCount === 0) {
+                await this._enrichFollowerCount(profileSlug, profile, profileUrn);
+            }
+
+        } catch (err) {
+            console.log(`  ⚠️ [${this._label}] Profile parse error: ${err.message}`);
         }
 
         console.log(`  ✅ [${this._label}] Profile ready: ${profile.name} | 👥 ${profile.followersCount} followers`);
