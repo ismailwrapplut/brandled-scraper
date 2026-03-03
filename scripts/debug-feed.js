@@ -1,6 +1,10 @@
-import('dotenv/config').then(async () => {
-    const { LinkedInApiClient } = await import('./clients/linkedin-api-client.js');
-    const { LinkedInAccountPool } = await import('./clients/linkedin-account-pool.js');
+// Load config
+import 'dotenv/config';
+
+async function main() {
+    const { LinkedInApiClient } = await import('../clients/linkedin-api-client.js');
+    const { LinkedInAccountPool } = await import('../clients/linkedin-account-pool.js');
+
     const pool = new LinkedInAccountPool();
     pool.load();
     const pair = pool.next();
@@ -24,4 +28,6 @@ import('dotenv/config').then(async () => {
     console.log('Saved to /tmp/linkedin-feed-response.json');
 
     client.cleanup();
-});
+}
+
+main().catch(console.error);
