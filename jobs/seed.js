@@ -74,8 +74,8 @@ export async function seedTopPosts(options = {}) {
         limit = null,
         skipTo = 0,
         dryRun = false,
-        maxTweetsPerCreator = 30,
-        maxLinkedInPostsPerCreator = 25,
+        maxTweetsPerCreator = 50,
+        maxLinkedInPostsPerCreator = 50,
         minEngagementScore = 50,
     } = options;
 

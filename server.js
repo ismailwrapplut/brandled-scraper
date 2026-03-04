@@ -46,7 +46,7 @@ app.get("/api/health", (req, res) => {
  * Returns: { posts: [...], profile: {...} }
  */
 app.post("/api/scrape/linkedin", authenticate, async (req, res) => {
-    const { username, maxPosts = 30 } = req.body;
+    const { username, maxPosts = 50 } = req.body;
 
     if (!username) {
         return res.status(400).json({ error: "username is required" });
@@ -101,7 +101,7 @@ app.post("/api/scrape/linkedin", authenticate, async (req, res) => {
  * Returns: { tweets: [...], profile: {...} }
  */
 app.post("/api/scrape/x", authenticate, async (req, res) => {
-    const { handle, maxTweets = 30 } = req.body;
+    const { handle, maxTweets = 50 } = req.body;
 
     if (!handle) {
         return res.status(400).json({ error: "handle is required" });
@@ -144,7 +144,7 @@ app.post("/api/scrape/x", authenticate, async (req, res) => {
  * Returns: { linkedin: {...}, x: {...} }
  */
 app.post("/api/scrape/both", authenticate, async (req, res) => {
-    const { linkedinUsername, xHandle, maxPosts = 30 } = req.body;
+    const { linkedinUsername, xHandle, maxPosts = 50 } = req.body;
 
     if (!linkedinUsername && !xHandle) {
         return res.status(400).json({ error: "At least one of linkedinUsername or xHandle is required" });
