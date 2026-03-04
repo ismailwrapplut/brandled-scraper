@@ -15,12 +15,12 @@
                 },
                 {
                     "name": "Kyle Poyar",
-                    "handle": "kylepoyar",
+                    "handle": "kyle-poyar",
                     "followers": 180000
                 },
                 {
                     "name": "Amanda Natividad",
-                    "handle": "amandanatividad",
+                    "handle": "amandanat",
                     "followers": 95000
                 },
                 {
@@ -30,12 +30,12 @@
                 },
                 {
                     "name": "Emily Kramer",
-                    "handle": "emilykramer1",
+                    "handle": "emilykramer",
                     "followers": 110000
                 },
                 {
                     "name": "Hiten Shah",
-                    "handle": "hitenshah",
+                    "handle": "hnshah",
                     "followers": 90000
                 },
                 {
@@ -50,7 +50,7 @@
                 },
                 {
                     "name": "Jason Lemkin",
-                    "handle": "jasonlk",
+                    "handle": "jasonmlemkin",
                     "followers": 400000
                 },
                 {
@@ -60,13 +60,8 @@
                 },
                 {
                     "name": "Adam Robinson",
-                    "handle": "adam-robinson-33",
+                    "handle": "retentionadam",
                     "followers": 175000
-                },
-                {
-                    "name": "Chris Orlob",
-                    "handle": "chrisorlob",
-                    "followers": 130000
                 },
                 {
                     "name": "Rand Fishkin",
@@ -75,18 +70,8 @@
                 },
                 {
                     "name": "Andrew Chen",
-                    "handle": "andrew-chen-1a",
+                    "handle": "andrewchen",
                     "followers": 200000
-                },
-                {
-                    "name": "Sean Ellis",
-                    "handle": "seanellis",
-                    "followers": 85000
-                },
-                {
-                    "name": "Patrick Campbell",
-                    "handle": "patrickccampbell",
-                    "followers": 75000
                 },
                 {
                     "name": "Dharmesh Shah",
@@ -95,63 +80,23 @@
                 },
                 {
                     "name": "Guillaume Moubeche",
-                    "handle": "guillaumemoubeche",
-                    "followers": 95000
-                },
-                {
-                    "name": "Gaetano DiNardi",
-                    "handle": "gaetanodinardi",
-                    "followers": 65000
-                },
-                {
-                    "name": "Wes Bush",
-                    "handle": "wesbush",
+                    "handle": "guillaume-moubeche-a026541b2",
                     "followers": 45000
                 },
                 {
-                    "name": "Mark Roberge",
-                    "handle": "markroberge",
-                    "followers": 80000
-                },
-                {
-                    "name": "Dave Kellogg",
-                    "handle": "davekellogg",
-                    "followers": 55000
-                },
-                {
-                    "name": "Brian Halligan",
-                    "handle": "brianhalligan",
-                    "followers": 150000
-                },
-                {
-                    "name": "Kieran Flanagan",
-                    "handle": "kieranflanagan",
-                    "followers": 75000
-                },
-                {
-                    "name": "Dan Olsen",
-                    "handle": "danolsen98",
-                    "followers": 40000
-                },
-                {
-                    "name": "Melissa Perri",
-                    "handle": "melissaperri",
-                    "followers": 65000
-                },
-                {
-                    "name": "Rob Snyder",
-                    "handle": "rob-m-snyder",
-                    "followers": 60000
-                },
-                {
-                    "name": "Claire Suellentrop",
-                    "handle": "clairesuellentro",
+                    "name": "Marc Lou",
+                    "handle": "marclouvion",
                     "followers": 45000
                 },
                 {
-                    "name": "Jacco van der Kooij",
-                    "handle": "jaccovanderkooij",
-                    "followers": 50000
+                    "name": "Vitalii Dodonov",
+                    "handle": "vitddnv",
+                    "followers": 27000
+                },
+                {
+                    "name": "John Hu",
+                    "handle": "johnghu",
+                    "followers": 63000
                 }
             ],
             "x": [
@@ -166,18 +111,13 @@
                     "followers": 320000
                 },
                 {
-                    "name": "Kyle Poyar",
-                    "handle": "paborenstein",
-                    "followers": 75000
+                    "name": "Marc Lou",
+                    "handle": "marclou",
+                    "followers": 302000
                 },
                 {
-                    "name": "Amanda Natividad",
-                    "handle": "amandanat",
-                    "followers": 80000
-                },
-                {
-                    "name": "April Dunford",
-                    "handle": "aprildunford",
+                    "name": "Rob Hallam",
+                    "handle": "robj3d3",
                     "followers": 45000
                 },
                 {
@@ -186,29 +126,9 @@
                     "followers": 200000
                 },
                 {
-                    "name": "Elena Verna",
-                    "handle": "elenaverna",
-                    "followers": 80000
-                },
-                {
                     "name": "Tomasz Tunguz",
                     "handle": "ttunguz",
                     "followers": 280000
-                },
-                {
-                    "name": "Jason Lemkin",
-                    "handle": "jasonlk",
-                    "followers": 250000
-                },
-                {
-                    "name": "Adam Robinson",
-                    "handle": "IAmAdamRobinson",
-                    "followers": 140000
-                },
-                {
-                    "name": "Chris Orlob",
-                    "handle": "chris_orlob",
-                    "followers": 85000
                 },
                 {
                     "name": "Rand Fishkin",
@@ -221,79 +141,19 @@
                     "followers": 700000
                 },
                 {
-                    "name": "Sean Ellis",
-                    "handle": "SeanEllis",
-                    "followers": 60000
-                },
-                {
                     "name": "Dharmesh Shah",
                     "handle": "dharmesh",
                     "followers": 250000
                 },
                 {
-                    "name": "Patrick Campbell",
-                    "handle": "Patticus",
-                    "followers": 60000
-                },
-                {
-                    "name": "Guillaume Moubeche",
-                    "handle": "guillaumeM_",
-                    "followers": 50000
-                },
-                {
-                    "name": "Brian Balfour",
-                    "handle": "bbalfour",
-                    "followers": 55000
-                },
-                {
-                    "name": "Leah Tharin",
-                    "handle": "LeahTharin",
-                    "followers": 70000
-                },
-                {
-                    "name": "Nathan Latka",
-                    "handle": "NathanLatka",
-                    "followers": 90000
-                },
-                {
-                    "name": "Steli Efti",
-                    "handle": "Steli",
-                    "followers": 80000
-                },
-                {
-                    "name": "Rob Snyder",
-                    "handle": "RSnyderIII",
-                    "followers": 40000
-                },
-                {
-                    "name": "Gaetano DiNardi",
-                    "handle": "gaabordi",
+                    "name": "Dmytro Krasun",
+                    "handle": "DmytroKrasun",
                     "followers": 35000
                 },
                 {
-                    "name": "Wes Bush",
-                    "handle": "WesBush",
-                    "followers": 30000
-                },
-                {
-                    "name": "Dan Olsen",
-                    "handle": "danolsen",
-                    "followers": 25000
-                },
-                {
-                    "name": "Melissa Perri",
-                    "handle": "lissijean",
-                    "followers": 40000
-                },
-                {
-                    "name": "Dave Kellogg",
-                    "handle": "kellblog",
-                    "followers": 35000
-                },
-                {
-                    "name": "Mark Roberge",
-                    "handle": "markroberge",
-                    "followers": 45000
+                    "name": "Romàn",
+                    "handle": "romanbuildsaas",
+                    "followers": 9000
                 },
                 {
                     "name": "Claire Suellentrop",
@@ -301,9 +161,9 @@
                     "followers": 25000
                 },
                 {
-                    "name": "Kieran Flanagan",
-                    "handle": "searchbrat",
-                    "followers": 40000
+                    "name": "Hasan Cagli",
+                    "handle": "HsanC_",
+                    "followers": 10000
                 }
             ]
         },
@@ -316,13 +176,8 @@
                     "followers": 200000
                 },
                 {
-                    "name": "Ross Simmonds",
-                    "handle": "rosssimmonds",
-                    "followers": 150000
-                },
-                {
                     "name": "Katelyn Bourgoin",
-                    "handle": "kbourgoin",
+                    "handle": "katebour",
                     "followers": 85000
                 },
                 {
@@ -331,38 +186,18 @@
                     "followers": 160000
                 },
                 {
-                    "name": "Tas Bober",
-                    "handle": "tasbober",
-                    "followers": 65000
-                },
-                {
-                    "name": "Neal O'Grady",
-                    "handle": "nealogrady",
-                    "followers": 55000
-                },
-                {
                     "name": "Tommy Clark",
                     "handle": "tclarkmedia",
                     "followers": 45000
                 },
                 {
                     "name": "Jess Cook",
-                    "handle": "jesscook-content",
+                    "handle": "jesscookpmp",
                     "followers": 40000
                 },
                 {
-                    "name": "Lashay Lewis",
-                    "handle": "lashaylewis",
-                    "followers": 50000
-                },
-                {
-                    "name": "Devin Reed",
-                    "handle": "devinreed1",
-                    "followers": 95000
-                },
-                {
                     "name": "Alex Lieberman",
-                    "handle": "alexlieberman",
+                    "handle": "alex-lieberman",
                     "followers": 180000
                 },
                 {
@@ -381,39 +216,14 @@
                     "followers": 500000
                 },
                 {
-                    "name": "Ryan Law",
-                    "handle": "ryanlaweight",
-                    "followers": 55000
-                },
-                {
-                    "name": "Peep Laja",
-                    "handle": "peeplaja",
-                    "followers": 75000
-                },
-                {
-                    "name": "Obaid Durrani",
-                    "handle": "obaiddurrani",
-                    "followers": 60000
-                },
-                {
                     "name": "Eddie Shleyner",
-                    "handle": "eddieshleyner",
+                    "handle": "eshleyner",
                     "followers": 85000
                 },
                 {
-                    "name": "Matt Barby",
-                    "handle": "mattbarby",
-                    "followers": 50000
-                },
-                {
-                    "name": "Corey Haines",
-                    "handle": "coreyhainesco",
-                    "followers": 35000
-                },
-                {
                     "name": "Sam Parr",
-                    "handle": "samparr",
-                    "followers": 100000
+                    "handle": "parrsam",
+                    "followers": 80000
                 },
                 {
                     "name": "Tim Soulo",
@@ -424,193 +234,18 @@
                     "name": "Andy Crestodina",
                     "handle": "andycrestodina",
                     "followers": 65000
-                },
-                {
-                    "name": "Udi Ledergor",
-                    "handle": "udiledergor",
-                    "followers": 50000
-                },
-                {
-                    "name": "Brooklin Nash",
-                    "handle": "brooklinnash",
-                    "followers": 45000
-                },
-                {
-                    "name": "Ashley Faus",
-                    "handle": "ashleyfaus",
-                    "followers": 35000
-                },
-                {
-                    "name": "John Bonini",
-                    "handle": "john-bonini",
-                    "followers": 40000
-                },
-                {
-                    "name": "Robert Rose",
-                    "handle": "robert-rose-76",
-                    "followers": 55000
-                },
-                {
-                    "name": "Jessica Morrobel",
-                    "handle": "jessicamorrobel",
-                    "followers": 30000
-                },
-                {
-                    "name": "Jon-Stephen Stansel",
-                    "handle": "jsstansel",
-                    "followers": 30000
                 }
             ],
             "x": [
-                {
-                    "name": "Dave Gerhardt",
-                    "handle": "davegerhardt",
-                    "followers": 80000
-                },
-                {
-                    "name": "Ross Simmonds",
-                    "handle": "TheCoolestCool",
-                    "followers": 100000
-                },
-                {
-                    "name": "Katelyn Bourgoin",
-                    "handle": "KateBour",
-                    "followers": 120000
-                },
-                {
-                    "name": "Chris Walker",
-                    "handle": "ChrisWalker171",
-                    "followers": 60000
-                },
-                {
-                    "name": "Tas Bober",
-                    "handle": "tasbober",
-                    "followers": 35000
-                },
-                {
-                    "name": "Neal O'Grady",
-                    "handle": "NealOGrady",
-                    "followers": 30000
-                },
-                {
-                    "name": "Tommy Clark",
-                    "handle": "tclarkmedia",
-                    "followers": 25000
-                },
-                {
-                    "name": "Devin Reed",
-                    "handle": "devinreed",
-                    "followers": 50000
-                },
                 {
                     "name": "Alex Lieberman",
                     "handle": "businessbarista",
                     "followers": 200000
                 },
                 {
-                    "name": "Jay Baer",
-                    "handle": "jaybaer",
-                    "followers": 350000
-                },
-                {
-                    "name": "Joe Pulizzi",
-                    "handle": "JoePulizzi",
-                    "followers": 180000
-                },
-                {
-                    "name": "Ann Handley",
-                    "handle": "AnnHandley",
-                    "followers": 450000
-                },
-                {
-                    "name": "Peep Laja",
-                    "handle": "peaborlaja",
-                    "followers": 60000
-                },
-                {
-                    "name": "Eddie Shleyner",
-                    "handle": "VeryGoodCopy",
-                    "followers": 40000
-                },
-                {
-                    "name": "Sam Parr",
-                    "handle": "thesamparr",
-                    "followers": 350000
-                },
-                {
                     "name": "Corey Haines",
                     "handle": "coreyhainesco",
                     "followers": 30000
-                },
-                {
-                    "name": "Andy Crestodina",
-                    "handle": "crestodina",
-                    "followers": 60000
-                },
-                {
-                    "name": "Tim Soulo",
-                    "handle": "timsoulo",
-                    "followers": 35000
-                },
-                {
-                    "name": "Udi Ledergor",
-                    "handle": "udi",
-                    "followers": 30000
-                },
-                {
-                    "name": "Ryan Law",
-                    "handle": "ryanlaweight",
-                    "followers": 25000
-                },
-                {
-                    "name": "Brooklin Nash",
-                    "handle": "brooklinnash",
-                    "followers": 20000
-                },
-                {
-                    "name": "Obaid Durrani",
-                    "handle": "ObaidDurrani",
-                    "followers": 35000
-                },
-                {
-                    "name": "Matt Barby",
-                    "handle": "mattbarby",
-                    "followers": 40000
-                },
-                {
-                    "name": "Robert Rose",
-                    "handle": "Robert_Rose",
-                    "followers": 30000
-                },
-                {
-                    "name": "Jess Cook",
-                    "handle": "jesscook",
-                    "followers": 20000
-                },
-                {
-                    "name": "Jon-Stephen Stansel",
-                    "handle": "jsstansel",
-                    "followers": 22000
-                },
-                {
-                    "name": "Ashley Faus",
-                    "handle": "ashleyfaus",
-                    "followers": 18000
-                },
-                {
-                    "name": "John Bonini",
-                    "handle": "bonini84",
-                    "followers": 25000
-                },
-                {
-                    "name": "Jessica Morrobel",
-                    "handle": "jessmorrobel",
-                    "followers": 15000
-                },
-                {
-                    "name": "Lashay Lewis",
-                    "handle": "LashayLewis",
-                    "followers": 25000
                 }
             ]
         },
@@ -623,44 +258,14 @@
                     "followers": 700000
                 },
                 {
-                    "name": "Allie Miller",
-                    "handle": "alliekmiller",
-                    "followers": 500000
-                },
-                {
                     "name": "Ethan Mollick",
                     "handle": "emollick",
                     "followers": 300000
                 },
                 {
-                    "name": "Matt Shumer",
-                    "handle": "mattshumer",
-                    "followers": 150000
-                },
-                {
-                    "name": "Zack Kass",
-                    "handle": "zackkass",
-                    "followers": 120000
-                },
-                {
-                    "name": "Robert Scoble",
-                    "handle": "scobleizer",
-                    "followers": 250000
-                },
-                {
                     "name": "Santiago Valdarrama",
                     "handle": "svpino",
                     "followers": 180000
-                },
-                {
-                    "name": "Yolanda Lau",
-                    "handle": "yolandalau",
-                    "followers": 80000
-                },
-                {
-                    "name": "Ben Tossell",
-                    "handle": "bentossell",
-                    "followers": 120000
                 },
                 {
                     "name": "Cassie Kozyrkov",
@@ -681,91 +286,6 @@
                     "name": "Jim Fan",
                     "handle": "jimfan",
                     "followers": 180000
-                },
-                {
-                    "name": "Elvis Saravia",
-                    "handle": "elvissaravia",
-                    "followers": 90000
-                },
-                {
-                    "name": "Nina Schick",
-                    "handle": "ninaschick",
-                    "followers": 100000
-                },
-                {
-                    "name": "Rachel Woods",
-                    "handle": "rachel-woods-ai",
-                    "followers": 70000
-                },
-                {
-                    "name": "Matt Wolfe",
-                    "handle": "mattwolfe",
-                    "followers": 85000
-                },
-                {
-                    "name": "Daliana Liu",
-                    "handle": "dalianaliu",
-                    "followers": 120000
-                },
-                {
-                    "name": "Harrison Chase",
-                    "handle": "harrisonchase",
-                    "followers": 95000
-                },
-                {
-                    "name": "Swyx",
-                    "handle": "swyx",
-                    "followers": 75000
-                },
-                {
-                    "name": "Logan Kilpatrick",
-                    "handle": "logankilpatrick",
-                    "followers": 80000
-                },
-                {
-                    "name": "Philipp Schmid",
-                    "handle": "philippschmid",
-                    "followers": 65000
-                },
-                {
-                    "name": "Sarah Guo",
-                    "handle": "sarahguo",
-                    "followers": 90000
-                },
-                {
-                    "name": "Sam Altman",
-                    "handle": "sama",
-                    "followers": 400000
-                },
-                {
-                    "name": "Bindu Reddy",
-                    "handle": "bindureddy",
-                    "followers": 60000
-                },
-                {
-                    "name": "Paolo Pirjanian",
-                    "handle": "paolopirjanian",
-                    "followers": 40000
-                },
-                {
-                    "name": "Li Yin",
-                    "handle": "liyin",
-                    "followers": 45000
-                },
-                {
-                    "name": "Pere Rosello",
-                    "handle": "pere-rosello",
-                    "followers": 50000
-                },
-                {
-                    "name": "Aman Khan",
-                    "handle": "aman-khan-ai",
-                    "followers": 55000
-                },
-                {
-                    "name": "Jasdev Singh",
-                    "handle": "jasdev",
-                    "followers": 40000
                 }
             ],
             "x": [
@@ -775,24 +295,9 @@
                     "followers": 500000
                 },
                 {
-                    "name": "Allie Miller",
-                    "handle": "alliekmiller",
-                    "followers": 300000
-                },
-                {
-                    "name": "Linas Beliunas",
-                    "handle": "LinasBeliun",
-                    "followers": 200000
-                },
-                {
                     "name": "Matt Shumer",
                     "handle": "mattshumer_",
                     "followers": 250000
-                },
-                {
-                    "name": "Robert Scoble",
-                    "handle": "Scobleizer",
-                    "followers": 400000
                 },
                 {
                     "name": "Santiago Valdarrama",
@@ -815,29 +320,9 @@
                     "followers": 150000
                 },
                 {
-                    "name": "Cassie Kozyrkov",
-                    "handle": "quaesita",
-                    "followers": 160000
-                },
-                {
-                    "name": "Ben Tossell",
-                    "handle": "bentossell",
-                    "followers": 200000
-                },
-                {
-                    "name": "Elvis Saravia",
-                    "handle": "oabormarsar",
-                    "followers": 80000
-                },
-                {
                     "name": "Swyx",
                     "handle": "swyx",
                     "followers": 120000
-                },
-                {
-                    "name": "Harrison Chase",
-                    "handle": "hwchase17",
-                    "followers": 80000
                 },
                 {
                     "name": "Logan Kilpatrick",
@@ -850,74 +335,14 @@
                     "followers": 80000
                 },
                 {
-                    "name": "Matt Wolfe",
-                    "handle": "mabortwolfe",
-                    "followers": 150000
-                },
-                {
                     "name": "Sam Altman",
                     "handle": "sama",
                     "followers": 3000000
                 },
                 {
-                    "name": "Yann LeCun",
-                    "handle": "ylecun",
-                    "followers": 700000
-                },
-                {
-                    "name": "Nina Schick",
-                    "handle": "NinaSchick",
-                    "followers": 60000
-                },
-                {
                     "name": "Philipp Schmid",
                     "handle": "_philschmid",
                     "followers": 45000
-                },
-                {
-                    "name": "Li Yin",
-                    "handle": "liyin2015",
-                    "followers": 40000
-                },
-                {
-                    "name": "Bindu Reddy",
-                    "handle": "bindureddy",
-                    "followers": 50000
-                },
-                {
-                    "name": "Zack Kass",
-                    "handle": "zaborckaborss",
-                    "followers": 45000
-                },
-                {
-                    "name": "Yolanda Lau",
-                    "handle": "YolandaMLau",
-                    "followers": 35000
-                },
-                {
-                    "name": "Daliana Liu",
-                    "handle": "DalianaLiu",
-                    "followers": 70000
-                },
-                {
-                    "name": "Rachel Woods",
-                    "handle": "rachel_woods",
-                    "followers": 60000
-                },
-                {
-                    "name": "Riley Brown",
-                    "handle": "rileybrownai",
-                    "followers": 50000
-                },
-                {
-                    "name": "Aman Khan",
-                    "handle": "amanaborai",
-                    "followers": 30000
-                },
-                {
-                    "name": "Pere Rosello",
-                    "handle": "pererosello",
-                    "followers": 25000
                 }
             ]
         },
@@ -936,18 +361,13 @@
                 },
                 {
                     "name": "Greg Isenberg",
-                    "handle": "gregisenberg",
+                    "handle": "gisenberg",
                     "followers": 200000
                 },
                 {
                     "name": "Shaan Puri",
                     "handle": "shaanpuri",
                     "followers": 150000
-                },
-                {
-                    "name": "Andrew Wilkinson",
-                    "handle": "awilkinson",
-                    "followers": 120000
                 },
                 {
                     "name": "Codie Sanchez",
@@ -961,13 +381,8 @@
                 },
                 {
                     "name": "Julian Shapiro",
-                    "handle": "julianshapiro",
+                    "handle": "julian-shapiro",
                     "followers": 90000
-                },
-                {
-                    "name": "Steph Smith",
-                    "handle": "stephsmithio",
-                    "followers": 65000
                 },
                 {
                     "name": "Arvid Kahl",
@@ -975,29 +390,9 @@
                     "followers": 50000
                 },
                 {
-                    "name": "Pieter Levels",
-                    "handle": "levelsio",
-                    "followers": 60000
-                },
-                {
-                    "name": "Rob Walling",
-                    "handle": "robwalling",
-                    "followers": 45000
-                },
-                {
                     "name": "Noah Kagan",
                     "handle": "noahkagan",
                     "followers": 120000
-                },
-                {
-                    "name": "Li Jin",
-                    "handle": "lijin",
-                    "followers": 70000
-                },
-                {
-                    "name": "Packy McCormick",
-                    "handle": "packym",
-                    "followers": 80000
                 },
                 {
                     "name": "Harry Stebbings",
@@ -1015,21 +410,6 @@
                     "followers": 100000
                 },
                 {
-                    "name": "Turner Novak",
-                    "handle": "turnernovak",
-                    "followers": 60000
-                },
-                {
-                    "name": "Paul Graham",
-                    "handle": "paulgraham",
-                    "followers": 200000
-                },
-                {
-                    "name": "Naval Ravikant",
-                    "handle": "navalravikant",
-                    "followers": 150000
-                },
-                {
                     "name": "Elad Gil",
                     "handle": "eladgil",
                     "followers": 90000
@@ -1040,39 +420,14 @@
                     "followers": 100000
                 },
                 {
-                    "name": "Brianne Kimmel",
-                    "handle": "briannekimmel",
-                    "followers": 55000
-                },
-                {
                     "name": "Marc Andreessen",
                     "handle": "pmarca",
                     "followers": 300000
                 },
                 {
-                    "name": "Ankur Warikoo",
-                    "handle": "ankurwarikoo",
-                    "followers": 400000
-                },
-                {
                     "name": "Peter Askew",
                     "handle": "peteraskew",
                     "followers": 40000
-                },
-                {
-                    "name": "Khe Hy",
-                    "handle": "khehy",
-                    "followers": 35000
-                },
-                {
-                    "name": "Syed Balkhi",
-                    "handle": "syedbalkhi",
-                    "followers": 50000
-                },
-                {
-                    "name": "Daniel Vassallo",
-                    "handle": "dvassallo",
-                    "followers": 35000
                 }
             ],
             "x": [
@@ -1097,13 +452,8 @@
                     "followers": 500000
                 },
                 {
-                    "name": "Andrew Wilkinson",
-                    "handle": "awilkinson",
-                    "followers": 250000
-                },
-                {
                     "name": "Codie Sanchez",
-                    "handle": "CodieSanworchez",
+                    "handle": "Codie_Sanchez",
                     "followers": 500000
                 },
                 {
@@ -1130,26 +480,6 @@
                     "name": "Arvid Kahl",
                     "handle": "arvidkahl",
                     "followers": 80000
-                },
-                {
-                    "name": "Rob Walling",
-                    "handle": "robwalling",
-                    "followers": 50000
-                },
-                {
-                    "name": "Noah Kagan",
-                    "handle": "noahkagan",
-                    "followers": 400000
-                },
-                {
-                    "name": "Li Jin",
-                    "handle": "ljin18",
-                    "followers": 100000
-                },
-                {
-                    "name": "Packy McCormick",
-                    "handle": "packym",
-                    "followers": 120000
                 },
                 {
                     "name": "Harry Stebbings",
@@ -1195,36 +525,6 @@
                     "name": "Sam Parr",
                     "handle": "thesamparr",
                     "followers": 350000
-                },
-                {
-                    "name": "Brianne Kimmel",
-                    "handle": "briannekimmel",
-                    "followers": 60000
-                },
-                {
-                    "name": "Ankur Warikoo",
-                    "handle": "warikoo",
-                    "followers": 300000
-                },
-                {
-                    "name": "Daniel Vassallo",
-                    "handle": "dvassallo",
-                    "followers": 120000
-                },
-                {
-                    "name": "Peter Askew",
-                    "handle": "searchbound",
-                    "followers": 30000
-                },
-                {
-                    "name": "Khe Hy",
-                    "handle": "khe_hy",
-                    "followers": 25000
-                },
-                {
-                    "name": "Syed Balkhi",
-                    "handle": "syedbalkhi",
-                    "followers": 40000
                 }
             ]
         },
@@ -1243,28 +543,18 @@
                 },
                 {
                     "name": "Nicolas Cole",
-                    "handle": "nicolascole77",
+                    "handle": "nicolascole",
                     "followers": 200000
                 },
                 {
-                    "name": "Jay Clouse",
-                    "handle": "jayclouse",
-                    "followers": 80000
-                },
-                {
                     "name": "Ali Abdaal",
-                    "handle": "aliabdaal",
+                    "handle": "ali-abdaal",
                     "followers": 120000
                 },
                 {
                     "name": "Matt Gray",
                     "handle": "mattgray1",
                     "followers": 180000
-                },
-                {
-                    "name": "Kieran Drew",
-                    "handle": "kierandrew1",
-                    "followers": 90000
                 },
                 {
                     "name": "Dakota Robertson",
@@ -1278,68 +568,28 @@
                 },
                 {
                     "name": "Jasmin Alic",
-                    "handle": "jasmin-alic",
+                    "handle": "alicjasmin",
                     "followers": 200000
                 },
                 {
-                    "name": "Tim Denning",
-                    "handle": "timdenning",
-                    "followers": 250000
+                    "name": "Jake Ward",
+                    "handle": "jakezward",
+                    "followers": 200000
                 },
                 {
-                    "name": "Tiago Forte",
-                    "handle": "tiagoforte",
-                    "followers": 100000
-                },
-                {
-                    "name": "Sahil Lavingia",
-                    "handle": "sahillavingia",
+                    "name": "Rob Hoffman",
+                    "handle": "rob-hoffman-ceo",
                     "followers": 80000
                 },
                 {
-                    "name": "Pat Flynn",
-                    "handle": "patflynn",
-                    "followers": 60000
-                },
-                {
-                    "name": "Roberto Blake",
-                    "handle": "robertoblake",
-                    "followers": 50000
-                },
-                {
-                    "name": "Alex Garcia",
-                    "handle": "alexgarcia",
-                    "followers": 75000
-                },
-                {
-                    "name": "Chenell Basilio",
-                    "handle": "chenellbasilio",
-                    "followers": 55000
-                },
-                {
-                    "name": "Josh Spector",
-                    "handle": "joshspector",
-                    "followers": 60000
-                },
-                {
-                    "name": "James Clear",
-                    "handle": "jamesclear",
-                    "followers": 250000
+                    "name": "Matt Barker",
+                    "handle": "mattbarker1",
+                    "followers": 189000
                 },
                 {
                     "name": "Ryan Holiday",
                     "handle": "ryanholiday",
                     "followers": 120000
-                },
-                {
-                    "name": "David Perell",
-                    "handle": "davidperell",
-                    "followers": 90000
-                },
-                {
-                    "name": "Matthew Kobach",
-                    "handle": "mkobach",
-                    "followers": 45000
                 },
                 {
                     "name": "Shane Parrish",
@@ -1399,11 +649,6 @@
                     "followers": 350000
                 },
                 {
-                    "name": "Jay Clouse",
-                    "handle": "jayclouse",
-                    "followers": 80000
-                },
-                {
                     "name": "Ali Abdaal",
                     "handle": "AliAbdaal",
                     "followers": 250000
@@ -1414,29 +659,9 @@
                     "followers": 300000
                 },
                 {
-                    "name": "Kieran Drew",
-                    "handle": "kierandrew",
-                    "followers": 200000
-                },
-                {
                     "name": "Dakota Robertson",
                     "handle": "WrongsToWrite",
                     "followers": 250000
-                },
-                {
-                    "name": "Lara Acosta",
-                    "handle": "LaraAcosta",
-                    "followers": 100000
-                },
-                {
-                    "name": "Jasmin Alic",
-                    "handle": "JasminAlic",
-                    "followers": 120000
-                },
-                {
-                    "name": "Tim Denning",
-                    "handle": "timdenning",
-                    "followers": 200000
                 },
                 {
                     "name": "Tiago Forte",
@@ -1447,31 +672,6 @@
                     "name": "Sahil Lavingia",
                     "handle": "shl",
                     "followers": 350000
-                },
-                {
-                    "name": "Pat Flynn",
-                    "handle": "PatFlynn",
-                    "followers": 250000
-                },
-                {
-                    "name": "Roberto Blake",
-                    "handle": "robertoblake",
-                    "followers": 100000
-                },
-                {
-                    "name": "Alex Garcia",
-                    "handle": "alexgarciamark",
-                    "followers": 250000
-                },
-                {
-                    "name": "Chenell Basilio",
-                    "handle": "chenell",
-                    "followers": 60000
-                },
-                {
-                    "name": "Josh Spector",
-                    "handle": "jspector",
-                    "followers": 40000
                 },
                 {
                     "name": "James Clear",
@@ -1549,11 +749,6 @@
                     "followers": 6000000
                 },
                 {
-                    "name": "Wes Kao",
-                    "handle": "weskao",
-                    "followers": 200000
-                },
-                {
                     "name": "Julie Zhuo",
                     "handle": "julie-zhuo",
                     "followers": 300000
@@ -1567,21 +762,6 @@
                     "name": "Liz Fosslien",
                     "handle": "lizfosslien",
                     "followers": 120000
-                },
-                {
-                    "name": "Molly Graham",
-                    "handle": "mollygraham",
-                    "followers": 80000
-                },
-                {
-                    "name": "Claire Hughes Johnson",
-                    "handle": "clairehughes",
-                    "followers": 90000
-                },
-                {
-                    "name": "Lara Hogan",
-                    "handle": "larahogan",
-                    "followers": 60000
                 },
                 {
                     "name": "Kim Scott",
@@ -1639,11 +819,6 @@
                     "followers": 150000
                 },
                 {
-                    "name": "Whitney Johnson",
-                    "handle": "whitneyjohnson",
-                    "followers": 70000
-                },
-                {
                     "name": "Oleg Vishnepolsky",
                     "handle": "olegvish",
                     "followers": 600000
@@ -1667,26 +842,6 @@
                     "name": "Tim Ferriss",
                     "handle": "timferriss",
                     "followers": 300000
-                },
-                {
-                    "name": "Bob Sutton",
-                    "handle": "bobsutton",
-                    "followers": 50000
-                },
-                {
-                    "name": "Ed Batista",
-                    "handle": "edbatista",
-                    "followers": 40000
-                },
-                {
-                    "name": "Brianna Wiest",
-                    "handle": "briannawiest",
-                    "followers": 80000
-                },
-                {
-                    "name": "Herminia Ibarra",
-                    "handle": "herminiaibarra",
-                    "followers": 80000
                 }
             ],
             "x": [
@@ -1699,21 +854,6 @@
                     "name": "Simon Sinek",
                     "handle": "simonsinek",
                     "followers": 4000000
-                },
-                {
-                    "name": "Wes Kao",
-                    "handle": "wes_kao",
-                    "followers": 80000
-                },
-                {
-                    "name": "Julie Zhuo",
-                    "handle": "joulee",
-                    "followers": 200000
-                },
-                {
-                    "name": "Seth Godin",
-                    "handle": "ThisIsSethsBlog",
-                    "followers": 800000
                 },
                 {
                     "name": "Gary Vaynerchuk",
@@ -1741,11 +881,6 @@
                     "followers": 2000000
                 },
                 {
-                    "name": "Kim Scott",
-                    "handle": "kimaborott",
-                    "followers": 60000
-                },
-                {
                     "name": "Mel Robbins",
                     "handle": "melrobbins",
                     "followers": 400000
@@ -1754,91 +889,6 @@
                     "name": "Tim Ferriss",
                     "handle": "tferriss",
                     "followers": 2000000
-                },
-                {
-                    "name": "Graham Weaver",
-                    "handle": "grahamweaver",
-                    "followers": 80000
-                },
-                {
-                    "name": "Liz Fosslien",
-                    "handle": "lizandmollie",
-                    "followers": 60000
-                },
-                {
-                    "name": "Lara Hogan",
-                    "handle": "lara_hogan",
-                    "followers": 40000
-                },
-                {
-                    "name": "Benjamin Hardy",
-                    "handle": "BenjaminPHardy",
-                    "followers": 120000
-                },
-                {
-                    "name": "Travis Bradberry",
-                    "handle": "talentsmart",
-                    "followers": 100000
-                },
-                {
-                    "name": "Bob Sutton",
-                    "handle": "work_matters",
-                    "followers": 35000
-                },
-                {
-                    "name": "Marshall Goldsmith",
-                    "handle": "coachgoldsmith",
-                    "followers": 80000
-                },
-                {
-                    "name": "Patrick Lencioni",
-                    "handle": "patricklencioni",
-                    "followers": 100000
-                },
-                {
-                    "name": "Whitney Johnson",
-                    "handle": "johnsonwhitney",
-                    "followers": 50000
-                },
-                {
-                    "name": "Nikhyl Singhal",
-                    "handle": "nikhyl",
-                    "followers": 60000
-                },
-                {
-                    "name": "Ed Batista",
-                    "handle": "edbatista",
-                    "followers": 20000
-                },
-                {
-                    "name": "Oleg Vishnepolsky",
-                    "handle": "olegvish",
-                    "followers": 40000
-                },
-                {
-                    "name": "Brianna Wiest",
-                    "handle": "briannawiest",
-                    "followers": 80000
-                },
-                {
-                    "name": "Molly Graham",
-                    "handle": "mollygraham",
-                    "followers": 25000
-                },
-                {
-                    "name": "Claire Hughes Johnson",
-                    "handle": "chughes",
-                    "followers": 30000
-                },
-                {
-                    "name": "Dave Ulrich",
-                    "handle": "dave_ulrich",
-                    "followers": 40000
-                },
-                {
-                    "name": "Herminia Ibarra",
-                    "handle": "herminiaibarra",
-                    "followers": 20000
                 }
             ]
         }
