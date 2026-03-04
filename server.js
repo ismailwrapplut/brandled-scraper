@@ -28,7 +28,11 @@ const API_SECRET = process.env.SCRAPER_API_SECRET || "brandled-scraper-secret";
 
 // Simple auth middleware
 function authenticate(req, res, next) {
-    const token = req.headers["x-api-key"] || req.headers["authorization"]?.replace("Bearer ", "");
+    // Support header OR query parameter (useful for simple cron pingers like cronjob.org)
+    const token = req.headers["x-api-key"] ||
+        req.headers["authorization"]?.replace("Bearer ", "") ||
+        req.query.token;
+
     if (token !== API_SECRET) {
         return res.status(401).json({ error: "Unauthorized" });
     }
@@ -265,6 +269,51 @@ app.post("/api/seed", authenticate, async (req, res) => {
 app.get("/api/seed/status", authenticate, (req, res) => {
     res.json({ running: _seedRunning, lastResult: _seedResult });
 });
+
+/**
+ * POST /api/refresh  (or GET /api/refresh for easy cron setups)
+ * Ideal for daily crons. Pulls the last 2 days of content for all creators.
+ * Optionally accept configuration.
+ */
+function handleRefresh(req, res) {
+    if (_seedRunning) {
+        return res.status(409).json({ error: "Pipeline is already running" });
+    }
+
+    const { niche, platform, days = 2 } = req.query || req.body || {};
+
+    _seedRunning = true;
+    _seedResult = null;
+
+    const options = {
+        niche: niche || null, // specific niche or all
+        platform: platform || null, // specific or all
+        maxDaysOld: parseInt(days, 10), // e.g., last 2 days
+        maxTweetsPerCreator: 15,        // only small page of tweets needed for 1-2 days
+        maxLinkedInPostsPerCreator: 10, // only a few needed for 1-2 days
+        minEngagementScore: 100,        // stricter standard for refresh
+        dryRun: false
+    };
+
+    const startTime = Date.now();
+    seedTopPosts(options)
+        .then((result) => {
+            _seedResult = { ...result, elapsed: ((Date.now() - startTime) / 1000 / 60).toFixed(1) + " min", finishedAt: new Date().toISOString() };
+            console.log("[Refresh] Completed:", JSON.stringify(_seedResult));
+        })
+        .catch((err) => {
+            _seedResult = { error: err.message, finishedAt: new Date().toISOString() };
+            console.error("[Refresh] Failed:", err.message);
+        })
+        .finally(() => {
+            _seedRunning = false;
+        });
+
+    res.json({ success: true, message: `Scraping refresh pipeline started (fetching last ${options.maxDaysOld} days)`, options });
+}
+
+app.post("/api/refresh", authenticate, handleRefresh);
+app.get("/api/refresh", authenticate, handleRefresh);
 
 /**
  * GET /api/debug/x?handle=justinwelsh

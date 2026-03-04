@@ -20,6 +20,7 @@ import {
     detectAndMergeThreads,
     deduplicateByContentHash,
     filterByEngagement,
+    filterByDate,
 } from "../pipeline/normalizer.js";
 import { classifyBatch } from "../pipeline/classifier.js";
 import { embedPosts, preparePineconeVectors } from "../pipeline/embedder.js";
@@ -78,12 +79,13 @@ export async function seedTopPosts(options = {}) {
         maxTweetsPerCreator = 50,
         maxLinkedInPostsPerCreator = 50,
         minEngagementScore = 50,
+        maxDaysOld = null, // e.g. 1 for daily refresh, 7 for weekly
     } = options;
 
     const startTime = Date.now();
     console.log("\n🚀 Starting Top Posts Seed Pipeline (per-creator mode)");
     console.log("─".repeat(50));
-    console.log(`Options: niche=${niche || "all"}, platform=${platform || "all"}, limit=${limit || "none"}, skipTo=${skipTo || 0}, dryRun=${dryRun}`);
+    console.log(`Options: niche=${niche || "all"}, platform=${platform || "all"}, maxDaysOld=${maxDaysOld || "none"}, limit=${limit || "none"}, skipTo=${skipTo || 0}, dryRun=${dryRun}`);
 
     // 1. Load creators
     const creators = await loadCreators({ niche, platform, limit });
@@ -132,6 +134,10 @@ export async function seedTopPosts(options = {}) {
                 normalized = detectAndMergeThreads(normalized);
                 normalized = deduplicateByContentHash(normalized);
                 normalized = filterByEngagement(normalized, minEngagementScore);
+
+                if (maxDaysOld) {
+                    normalized = filterByDate(normalized, maxDaysOld);
+                }
 
                 if (normalized.length === 0) {
                     console.log(`      → ${tweets.length} tweets fetched, 0 passed filters`);
@@ -291,6 +297,10 @@ export async function seedTopPosts(options = {}) {
                     );
                     normalized = deduplicateByContentHash(normalized);
                     normalized = filterByEngagement(normalized, minEngagementScore);
+
+                    if (maxDaysOld) {
+                        normalized = filterByDate(normalized, maxDaysOld);
+                    }
 
                     if (normalized.length === 0) {
                         console.log(`      → ${posts.length} posts fetched, 0 passed filters`);

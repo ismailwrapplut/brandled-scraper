@@ -209,6 +209,22 @@ export function filterByEngagement(posts, minScore = 100) {
     return posts.filter((p) => p.engagementScore >= minScore);
 }
 
+/**
+ * Filter posts by maximum age in days
+ */
+export function filterByDate(posts, maxDaysOld) {
+    if (!maxDaysOld) return posts;
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - maxDaysOld);
+
+    return posts.filter((p) => {
+        if (!p.postedAt) return false; // Drop posts with no date if a filter is set
+        const postDate = new Date(p.postedAt);
+        return postDate >= cutoffDate;
+    });
+}
+
 // --- Helpers ---
 
 function countWords(text) {
