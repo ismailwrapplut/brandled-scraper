@@ -24,6 +24,7 @@ import {
 import { classifyBatch } from "../pipeline/classifier.js";
 import { embedPosts, preparePineconeVectors } from "../pipeline/embedder.js";
 import { upsertTopPosts, getStats } from "../pinecone/client.js";
+import { upsertToMongoDB } from "../database/mongo.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,10 +145,15 @@ export async function seedTopPosts(options = {}) {
                 // EMBED
                 const embedded = await embedPosts(classified);
 
-                // UPSERT
+                // UPSERT (Pinecone + MongoDB)
                 const vectors = preparePineconeVectors(embedded);
-                if (vectors.length > 0 && !dryRun) {
-                    await upsertTopPosts(vectors);
+                if (!dryRun) {
+                    if (vectors.length > 0) {
+                        await upsertTopPosts(vectors);
+                    }
+                    if (embedded.length > 0) {
+                        await upsertToMongoDB(embedded);
+                    }
                 }
 
                 allVectors.push(...vectors);
@@ -298,10 +304,15 @@ export async function seedTopPosts(options = {}) {
                     // EMBED
                     const embedded = await embedPosts(classified);
 
-                    // UPSERT
+                    // UPSERT (Pinecone + MongoDB)
                     const vectors = preparePineconeVectors(embedded);
-                    if (vectors.length > 0 && !dryRun) {
-                        await upsertTopPosts(vectors);
+                    if (!dryRun) {
+                        if (vectors.length > 0) {
+                            await upsertTopPosts(vectors);
+                        }
+                        if (embedded.length > 0) {
+                            await upsertToMongoDB(embedded);
+                        }
                     }
 
                     allVectors.push(...vectors);
